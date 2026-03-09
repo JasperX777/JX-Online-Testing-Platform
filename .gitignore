@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+
+# Virtual environments
+.venv/
+venv/
+backend/.venv/
+
+# JetBrains
+.idea/
+*.iml
+
+# Env
+.env
+.env.*
+.idea/
+*.iml
