@@ -17,3 +17,5 @@ backend/.venv/
 .env.*
 .idea/
 *.iml
+
+*.sqlite3
