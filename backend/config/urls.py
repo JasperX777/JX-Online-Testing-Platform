@@ -16,7 +16,31 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+class PingView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"message": "pong", "user": request.user.username})
+
+class HealthView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"status": "OK"})
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # Public
+    path('api/health/', HealthView.as_view(), name='health'),
+    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Protected
+    path('api/ping/', PingView.as_view(), name='ping'),
 ]
