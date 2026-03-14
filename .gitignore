@@ -10,12 +10,10 @@ backend/.venv/
 
 # JetBrains
 .idea/
-*.iml
+*.pyc
+.DS_Store
 
 # Env
 .env
 .env.*
-.idea/
 *.iml
-
-*.sqlite3
