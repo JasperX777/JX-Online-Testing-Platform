@@ -20,6 +20,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from accounts.views import MeView
 
 class PingView(APIView):
     permission_classes = [IsAuthenticated]
@@ -43,4 +44,6 @@ urlpatterns = [
 
     # Protected
     path('api/ping/', PingView.as_view(), name='ping'),
+
+    path('api/auth/me/', MeView.as_view(), name='auth_me'),
 ]
