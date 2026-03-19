@@ -3,15 +3,25 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Project
+from .models import Project, ProjectMember
 
 User = get_user_model()
 
 
-class ProjectTests(APITestCase):
+class ProjectApiTests(APITestCase):
     def setUp(self):
-        self.u1 = User.objects.create_user(username='u1_test', password='pass123456')
-        self.u2 = User.objects.create_user(username='u2_test', password='pass123456')
+        self.dev = User.objects.create_user(username='dev_test', password='pass123456')
+        self.tester = User.objects.create_user(username='tester_test', password='pass123456')
+        self.admin = User.objects.create_user(username='admin_test', password='pass123456')
+
+        self.dev.profile.role = 'developer'
+        self.dev.profile.save()
+
+        self.tester.profile.role = 'tester'
+        self.tester.profile.save()
+
+        self.admin.profile.role = 'admin'
+        self.admin.profile.save()
 
     def auth(self, user):
         refresh = RefreshToken.for_user(user)
@@ -21,18 +31,57 @@ class ProjectTests(APITestCase):
         resp = self.client.get('/api/projects/')
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_create_project_sets_owner(self):
-        self.auth(self.u1)
-        payload = {'name': 'Test Project', 'description': 'demo'}
-        resp = self.client.post('/api/projects/', payload, format='json')
-
+    def test_developer_can_create_project(self):
+        self.auth(self.dev)
+        resp = self.client.post(
+            '/api/projects/',
+            {'name': 'Dev Project', 'description': 'owned by dev'},
+            format='json',
+        )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         obj = Project.objects.get(id=resp.data['id'])
-        self.assertEqual(obj.owner_id, self.u1.id)
+        self.assertEqual(obj.owner_id, self.dev.id)
 
-    def test_non_admin_cannot_access_others_project(self):
-        p2 = Project.objects.create(name='u2 project', description='', owner=self.u2)
-        self.auth(self.u1)
+    def test_tester_cannot_create_project(self):
+        self.auth(self.tester)
+        resp = self.client.post(
+            '/api/projects/',
+            {'name': 'Tester Project', 'description': 'should fail'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
-        resp = self.client.get(f'/api/projects/{p2.id}/')
-        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+    def test_tester_can_read_assigned_project(self):
+        project = Project.objects.create(name='P1', description='', owner=self.dev)
+        ProjectMember.objects.create(project=project, user=self.tester, role_in_project='tester')
+
+        self.auth(self.tester)
+        resp = self.client.get(f'/api/projects/{project.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_tester_cannot_update_assigned_project(self):
+        project = Project.objects.create(name='P1', description='', owner=self.dev)
+        ProjectMember.objects.create(project=project, user=self.tester, role_in_project='tester')
+
+        self.auth(self.tester)
+        resp = self.client.put(
+            f'/api/projects/{project.id}/',
+            {'name': 'Changed by tester', 'description': 'x'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_tester_cannot_delete_assigned_project(self):
+        project = Project.objects.create(name='P1', description='', owner=self.dev)
+        ProjectMember.objects.create(project=project, user=self.tester, role_in_project='tester')
+
+        self.auth(self.tester)
+        resp = self.client.delete(f'/api/projects/{project.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_view_all_projects(self):
+        project = Project.objects.create(name='P1', description='', owner=self.dev)
+
+        self.auth(self.admin)
+        resp = self.client.get(f'/api/projects/{project.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
