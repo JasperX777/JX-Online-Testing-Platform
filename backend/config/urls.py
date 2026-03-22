@@ -38,6 +38,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     path('api/', include('projects.urls')),
+    path('api/', include('testcases.urls')),
+    path('api/', include('executions.urls')),
 
     # Public
     path('api/health/', HealthView.as_view(), name='health'),
