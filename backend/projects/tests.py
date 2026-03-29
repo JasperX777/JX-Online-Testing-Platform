@@ -117,4 +117,4 @@ class ProjectApiTests(APITestCase):
             {'tester_id': self.tester.id},
             format='json',
         )
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
