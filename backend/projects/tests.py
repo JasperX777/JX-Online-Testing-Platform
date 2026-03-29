@@ -85,3 +85,36 @@ class ProjectApiTests(APITestCase):
         self.auth(self.admin)
         resp = self.client.get(f'/api/projects/{project.id}/')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_owner_can_assign_tester(self):
+        project = Project.objects.create(name='P1', description='', owner=self.dev)
+
+        self.auth(self.dev)
+        resp = self.client.post(
+            f'/api/projects/{project.id}/assign-tester/',
+            {'tester_id': self.tester.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=project,
+                user=self.tester,
+                role_in_project='tester',
+            ).exists()
+        )
+
+    def test_developer_cannot_assign_tester_to_other_users_project(self):
+        other_dev = User.objects.create_user(username='other_dev', password='pass123456')
+        other_dev.profile.role = 'developer'
+        other_dev.profile.save()
+
+        project = Project.objects.create(name='P1', description='', owner=other_dev)
+
+        self.auth(self.dev)
+        resp = self.client.post(
+            f'/api/projects/{project.id}/assign-tester/',
+            {'tester_id': self.tester.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

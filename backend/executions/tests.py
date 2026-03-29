@@ -69,3 +69,7 @@ class ExecutionLogApiTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data), 1)
         self.assertEqual(resp.data[0]['project'], self.project.id)
+
+    def test_execution_logs_requires_auth(self):
+        resp = self.client.get('/api/execution-logs/')
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
