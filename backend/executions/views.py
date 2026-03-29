@@ -13,7 +13,7 @@ from .serializers import (
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
-from .services import run_test_execution
+from .tasks import run_test_execution_task
 
 
 class ExecutionAccessMixin:
@@ -100,7 +100,8 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
             project=project,
             testcase=testcase,
             triggered_by=request.user,
+            status=TestExecution.Status.PENDING,
         )
-        execution = run_test_execution(execution=execution)
+        run_test_execution_task.delay(execution.id)
 
         return Response(TestExecutionSerializer(execution).data, status=status.HTTP_201_CREATED)
