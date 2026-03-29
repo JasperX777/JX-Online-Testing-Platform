@@ -1,5 +1,7 @@
 import subprocess
 import sys
+
+from django.conf import settings
 from django.utils import timezone
 
 from .models import ExecutionLog, TestExecution
@@ -20,7 +22,7 @@ def run_test_execution(*, execution: TestExecution):
     cmd = [sys.executable, '-m', 'pytest', '-q']
     completed = subprocess.run(
         cmd,
-        cwd='/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend',
+        cwd=settings.BASE_DIR,
         capture_output=True,
         text=True,
         timeout=120,
