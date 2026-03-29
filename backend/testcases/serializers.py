@@ -1,5 +1,7 @@
 from rest_framework import serializers
+
 from .models import TestCase
+
 
 class TestCaseSerializer(serializers.ModelSerializer):
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
@@ -15,6 +17,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
             'expected_result',
             'category',
             'tags',
+            'pytest_target',
             'priority',
             'status',
             'created_by',

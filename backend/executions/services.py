@@ -20,6 +20,9 @@ def run_test_execution(*, execution: TestExecution):
     )
 
     cmd = [sys.executable, '-m', 'pytest', '-q']
+    if execution.testcase and execution.testcase.pytest_target:
+        cmd.append(execution.testcase.pytest_target)
+
     completed = subprocess.run(
         cmd,
         cwd=settings.BASE_DIR,
