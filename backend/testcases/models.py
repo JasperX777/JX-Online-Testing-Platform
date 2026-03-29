@@ -1,7 +1,8 @@
-from django.db import models
 from django.conf import settings
+from django.db import models
 
 from projects.models import Project
+
 
 class TestCase(models.Model):
     class Priority(models.TextChoices):
@@ -32,6 +33,11 @@ class TestCase(models.Model):
     tags = models.JSONField(
         default=list,
         blank=True,
+    )
+    pytest_target = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Optional pytest file or node id, for example testcases/tests.py::TestCaseApiTests::test_create_testcase_success',
     )
 
     priority = models.CharField(
