@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -5,9 +7,9 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from projects.models import Project
+from projects.models import Project, ProjectMember
 from testcases.models import TestCase as TC
-from .models import ExecutionLog
+from .models import ExecutionLog, TestExecution
 
 User = get_user_model()
 
@@ -36,6 +38,7 @@ class ExecutionLogModelTests(TestCase):
         self.assertEqual(log.project_id, project.id)
         self.assertEqual(log.testcase_id, tc.id)
         self.assertEqual(log.level, 'info')
+
 
 class ExecutionLogApiTests(APITestCase):
     def setUp(self):
@@ -73,3 +76,87 @@ class ExecutionLogApiTests(APITestCase):
     def test_execution_logs_requires_auth(self):
         resp = self.client.get('/api/execution-logs/')
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TestExecutionApiTests(APITestCase):
+    def setUp(self):
+        self.dev = User.objects.create_user(username='exec_dev', password='pass123456')
+        self.dev.profile.role = 'developer'
+        self.dev.profile.save()
+
+        self.tester = User.objects.create_user(username='exec_tester', password='pass123456')
+        self.tester.profile.role = 'tester'
+        self.tester.profile.save()
+
+        self.other_dev = User.objects.create_user(username='exec_other_dev', password='pass123456')
+        self.other_dev.profile.role = 'developer'
+        self.other_dev.profile.save()
+
+        self.project = Project.objects.create(name='Execution Project', description='', owner=self.dev)
+        self.other_project = Project.objects.create(name='Other Project', description='', owner=self.other_dev)
+
+        self.tc = TC.objects.create(
+            project=self.project,
+            title='Runnable case',
+            description='',
+            steps='',
+            expected_result='',
+            created_by=self.dev,
+        )
+        self.other_tc = TC.objects.create(
+            project=self.other_project,
+            title='Hidden case',
+            description='',
+            steps='',
+            expected_result='',
+            created_by=self.other_dev,
+        )
+
+        ProjectMember.objects.create(project=self.project, user=self.tester, role_in_project='tester')
+
+    def auth(self, user):
+        refresh = RefreshToken.for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+    @patch('executions.views.run_test_execution_task.delay')
+    def test_run_execution_creates_pending_execution_and_dispatches_task(self, delay_mock):
+        self.auth(self.dev)
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id, 'testcase': self.tc.id},
+            format='json',
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        execution = TestExecution.objects.get(id=resp.data['id'])
+        self.assertEqual(execution.project_id, self.project.id)
+        self.assertEqual(execution.testcase_id, self.tc.id)
+        self.assertEqual(execution.triggered_by_id, self.dev.id)
+        self.assertEqual(execution.status, TestExecution.Status.PENDING)
+        delay_mock.assert_called_once_with(execution.id)
+
+    def test_run_execution_requires_auth(self):
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id, 'testcase': self.tc.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_tester_cannot_run_execution(self):
+        self.auth(self.tester)
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id, 'testcase': self.tc.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_developer_cannot_run_hidden_project_execution(self):
+        self.auth(self.dev)
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.other_project.id, 'testcase': self.other_tc.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
