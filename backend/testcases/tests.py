@@ -46,6 +46,7 @@ class TestCaseApiTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         obj = TestCase.objects.get(id=resp.data['id'])
         self.assertEqual(obj.created_by_id, self.user.id)
+        self.assertEqual(obj.test_type, TestCase.TestType.FUNCTIONAL)
 
     def test_filter_by_project_and_category(self):
         self.auth()

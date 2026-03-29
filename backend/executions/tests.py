@@ -1,3 +1,4 @@
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -10,6 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from projects.models import Project, ProjectMember
 from testcases.models import TestCase as TC
 from .models import ExecutionLog, TestExecution
+from .services import run_test_execution
 
 User = get_user_model()
 
@@ -76,6 +78,68 @@ class ExecutionLogApiTests(APITestCase):
     def test_execution_logs_requires_auth(self):
         resp = self.client.get('/api/execution-logs/')
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TestExecutionServiceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='exec_service_user', password='pass123456')
+        self.user.profile.role = 'developer'
+        self.user.profile.save()
+
+        self.project = Project.objects.create(name='Service Project', description='', owner=self.user)
+        self.tc = TC.objects.create(
+            project=self.project,
+            title='Runnable case',
+            description='',
+            steps='',
+            expected_result='',
+            created_by=self.user,
+            test_type=TC.TestType.FUNCTIONAL,
+            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
+        )
+
+    @patch('executions.runners.PytestExecutionRunner.run')
+    def test_functional_execution_uses_pytest_runner(self, run_mock):
+        run_mock.return_value = CompletedProcess(
+            args=['pytest'],
+            returncode=0,
+            stdout='1 passed in 0.10s',
+            stderr='',
+        )
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.user,
+            status=TestExecution.Status.PENDING,
+        )
+
+        run_test_execution(execution=execution)
+        execution.refresh_from_db()
+
+        self.assertEqual(execution.status, TestExecution.Status.SUCCESS)
+        self.assertEqual(execution.exit_code, 0)
+        self.assertIn('1 passed', execution.result_summary)
+        run_mock.assert_called_once()
+        self.assertEqual(ExecutionLog.objects.filter(project=self.project).count(), 2)
+
+    @patch('executions.runners.PytestExecutionRunner.run')
+    def test_unsupported_test_type_marks_execution_failed(self, run_mock):
+        self.tc.test_type = TC.TestType.SECURITY
+        self.tc.save(update_fields=['test_type'])
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.user,
+            status=TestExecution.Status.PENDING,
+        )
+
+        run_test_execution(execution=execution)
+        execution.refresh_from_db()
+
+        self.assertEqual(execution.status, TestExecution.Status.FAILED)
+        self.assertEqual(execution.exit_code, 1)
+        self.assertIn('not implemented yet', execution.result_summary)
+        run_mock.assert_not_called()
 
 
 class TestExecutionApiTests(APITestCase):
