@@ -17,6 +17,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
             'expected_result',
             'category',
             'tags',
+            'test_type',
             'pytest_target',
             'priority',
             'status',

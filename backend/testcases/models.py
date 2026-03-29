@@ -5,6 +5,12 @@ from projects.models import Project
 
 
 class TestCase(models.Model):
+    class TestType(models.TextChoices):
+        FUNCTIONAL = 'functional', 'Functional'
+        SECURITY = 'security', 'Security'
+        PERFORMANCE = 'performance', 'Performance'
+        PENETRATION = 'penetration', 'Penetration'
+
     class Priority(models.TextChoices):
         LOW = 'low', 'Low'
         MEDIUM = 'medium', 'Medium'
@@ -34,10 +40,16 @@ class TestCase(models.Model):
         default=list,
         blank=True,
     )
+    test_type = models.CharField(
+        max_length=32,
+        choices=TestType.choices,
+        default=TestType.FUNCTIONAL,
+        help_text='Execution type for this testcase, for example functional, security, performance, or penetration.',
+    )
     pytest_target = models.CharField(
         max_length=255,
         blank=True,
-        help_text='Optional pytest file or node id, for example testcases/tests.py::TestCaseApiTests::test_create_testcase_success',
+        help_text='Optional pytest file or node id used by functional testcases, for example testcases/tests.py::TestCaseApiTests::test_create_testcase_success',
     )
 
     priority = models.CharField(
