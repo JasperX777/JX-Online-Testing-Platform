@@ -48,7 +48,7 @@ class TestExecutionSerializer(serializers.ModelSerializer):
 
 class TestExecutionRunSerializer(serializers.Serializer):
     project = serializers.IntegerField()
-    testcase = serializers.IntegerField(required=False, allow_null=True)
+    testcase = serializers.IntegerField()
 
     def validate(self, attrs):
         from projects.models import Project
@@ -58,14 +58,13 @@ class TestExecutionRunSerializer(serializers.Serializer):
         if not project:
             raise serializers.ValidationError({'project': 'Project not found.'})
 
-        testcase_id = attrs.get('testcase')
-        testcase = None
-        if testcase_id is not None:
-            testcase = TestCase.objects.filter(id=testcase_id).first()
-            if not testcase:
-                raise serializers.ValidationError({'testcase': 'Test case not found.'})
-            if testcase.project_id != project.id:
-                raise serializers.ValidationError({'testcase': 'Test case does not belong to this project.'})
+        testcase = TestCase.objects.filter(id=attrs['testcase']).first()
+        if not testcase:
+            raise serializers.ValidationError({'testcase': 'Test case not found.'})
+        if testcase.project_id != project.id:
+            raise serializers.ValidationError({'testcase': 'Test case does not belong to this project.'})
+        if testcase.test_type == TestCase.TestType.FUNCTIONAL and not testcase.pytest_target:
+            raise serializers.ValidationError({'testcase': 'Functional test case requires a pytest target.'})
 
         attrs['project_obj'] = project
         attrs['testcase_obj'] = testcase

@@ -27,3 +27,19 @@ class TestCaseSerializer(serializers.ModelSerializer):
             'updated_at',
         )
         read_only_fields = ('created_by', 'created_by_username', 'created_at', 'updated_at')
+
+    def validate_project(self, project):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+
+        if not user or not user.is_authenticated:
+            return project
+
+        if user.is_superuser or role == 'admin':
+            return project
+
+        if role == 'developer' and project.owner_id == user.id:
+            return project
+
+        raise serializers.ValidationError('You do not have permission to write test cases in this project.')
