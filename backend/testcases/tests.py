@@ -48,6 +48,62 @@ class TestCaseApiTests(APITestCase):
         self.assertEqual(obj.created_by_id, self.user.id)
         self.assertEqual(obj.test_type, TestCase.TestType.FUNCTIONAL)
 
+    def test_developer_cannot_create_testcase_in_other_users_project(self):
+        other_dev = User.objects.create_user(username='tc_other_dev', password='pass123456')
+        other_dev.profile.role = 'developer'
+        other_dev.profile.save()
+        hidden_project = Project.objects.create(name='Hidden', description='', owner=other_dev)
+
+        self.auth()
+        resp = self.client.post(
+            '/api/testcases/',
+            {
+                'project': hidden_project.id,
+                'title': 'Should fail',
+                'description': '',
+                'steps': '',
+                'expected_result': '',
+                'category': 'auth',
+                'tags': ['login'],
+                'priority': 'medium',
+                'status': 'draft',
+            },
+            format='json',
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', resp.data)
+
+    def test_developer_cannot_move_testcase_to_other_users_project(self):
+        other_dev = User.objects.create_user(username='tc_other_dev2', password='pass123456')
+        other_dev.profile.role = 'developer'
+        other_dev.profile.save()
+        hidden_project = Project.objects.create(name='Hidden', description='', owner=other_dev)
+        tc = TestCase.objects.create(
+            project=self.project,
+            title='Owned by dev',
+            description='',
+            steps='',
+            expected_result='',
+            category='auth',
+            tags=['login'],
+            priority='medium',
+            status='ready',
+            created_by=self.user,
+        )
+
+        self.auth()
+        resp = self.client.patch(
+            f'/api/testcases/{tc.id}/',
+            {'project': hidden_project.id},
+            format='json',
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', resp.data)
+        tc.refresh_from_db()
+        self.assertEqual(tc.project_id, self.project.id)
+
     def test_filter_by_project_and_category(self):
         self.auth()
         TestCase.objects.create(

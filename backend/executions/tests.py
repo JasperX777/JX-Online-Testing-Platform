@@ -166,6 +166,15 @@ class TestExecutionApiTests(APITestCase):
             steps='',
             expected_result='',
             created_by=self.dev,
+            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
+        )
+        self.unconfigured_tc = TC.objects.create(
+            project=self.project,
+            title='Missing target',
+            description='',
+            steps='',
+            expected_result='',
+            created_by=self.dev,
         )
         self.other_tc = TC.objects.create(
             project=self.other_project,
@@ -174,6 +183,7 @@ class TestExecutionApiTests(APITestCase):
             steps='',
             expected_result='',
             created_by=self.other_dev,
+            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
         )
 
         ProjectMember.objects.create(project=self.project, user=self.tester, role_in_project='tester')
@@ -206,6 +216,26 @@ class TestExecutionApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_run_execution_requires_testcase(self):
+        self.auth(self.dev)
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('testcase', resp.data)
+
+    def test_run_execution_rejects_functional_testcase_without_pytest_target(self):
+        self.auth(self.dev)
+        resp = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id, 'testcase': self.unconfigured_tc.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('testcase', resp.data)
 
     def test_tester_cannot_run_execution(self):
         self.auth(self.tester)
