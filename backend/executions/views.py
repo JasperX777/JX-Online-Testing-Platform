@@ -1,5 +1,6 @@
 from django.db.models import Q
 from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,8 +9,10 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from projects.models import Project
 
 from .models import ExecutionLog, TestExecution
+from .realtime import broadcast_execution_event
 from .serializers import (
     ExecutionLogSerializer,
+    ExecutionReportSerializer,
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
@@ -45,6 +48,7 @@ class ExecutionLogViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
         project_id = self.request.query_params.get('project_id')
         level = self.request.query_params.get('level')
         testcase_id = self.request.query_params.get('testcase_id')
+        execution_id = self.request.query_params.get('execution_id')
 
         if project_id:
             qs = qs.filter(project_id=project_id)
@@ -52,6 +56,8 @@ class ExecutionLogViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
             qs = qs.filter(level=level)
         if testcase_id:
             qs = qs.filter(testcase_id=testcase_id)
+        if execution_id:
+            qs = qs.filter(execution_id=execution_id)
 
         return qs
 
@@ -62,7 +68,7 @@ class TestExecutionViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
 
     def get_queryset(self):
         visibility_filter = self.get_execution_visibility_filter()
-        qs = TestExecution.objects.all() if not visibility_filter else TestExecution.objects.filter(visibility_filter).distinct()
+        qs = TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').all() if not visibility_filter else TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').filter(visibility_filter).distinct()
 
         project_id = self.request.query_params.get('project_id')
         status_value = self.request.query_params.get('status')
@@ -76,6 +82,13 @@ class TestExecutionViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
             qs = qs.filter(testcase_id=testcase_id)
 
         return qs
+
+    @action(detail=True, methods=['get'], url_path='report')
+    def report(self, request, pk=None):
+        execution = self.get_object()
+        if not hasattr(execution, 'report'):
+            return Response({'detail': 'Report not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ExecutionReportSerializer(execution.report).data)
 
 
 class RunTestExecutionView(ExecutionAccessMixin, APIView):
@@ -102,6 +115,7 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
             triggered_by=request.user,
             status=TestExecution.Status.PENDING,
         )
+        broadcast_execution_event(event='execution.pending', execution=execution)
         run_test_execution_task.delay(execution.id)
 
         return Response(TestExecutionSerializer(execution).data, status=status.HTTP_201_CREATED)

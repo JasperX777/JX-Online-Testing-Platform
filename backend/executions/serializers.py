@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import ExecutionLog, TestExecution
+from .models import ExecutionLog, ExecutionReport, TestExecution
 
 
 class ExecutionLogSerializer(serializers.ModelSerializer):
@@ -11,6 +11,7 @@ class ExecutionLogSerializer(serializers.ModelSerializer):
         model = ExecutionLog
         fields = (
             'id',
+            'execution',
             'project',
             'project_name',
             'testcase',
@@ -21,10 +22,24 @@ class ExecutionLogSerializer(serializers.ModelSerializer):
         )
 
 
+class ExecutionReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExecutionReport
+        fields = (
+            'id',
+            'execution',
+            'report_data',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = fields
+
+
 class TestExecutionSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True)
     testcase_title = serializers.CharField(source='testcase.title', read_only=True)
     triggered_by_username = serializers.CharField(source='triggered_by.username', read_only=True)
+    report = ExecutionReportSerializer(read_only=True)
 
     class Meta:
         model = TestExecution
@@ -42,6 +57,7 @@ class TestExecutionSerializer(serializers.ModelSerializer):
             'started_at',
             'finished_at',
             'created_at',
+            'report',
         )
         read_only_fields = fields
 
