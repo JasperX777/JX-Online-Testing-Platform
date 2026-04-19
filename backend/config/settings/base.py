@@ -26,6 +26,9 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    # Third-party server/runtime
+    'daphne',
+
     # Django
     'django.contrib.admin',
     'django.contrib.auth',
@@ -36,6 +39,7 @@ INSTALLED_APPS = [
 
     # Third-party
     'rest_framework',
+    'channels',
 
     # Local apps
     'accounts',
@@ -72,6 +76,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -128,3 +133,13 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+CHANNEL_REDIS_URL = os.getenv('CHANNEL_REDIS_URL', CELERY_BROKER_URL)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [CHANNEL_REDIS_URL],
+        },
+    },
+}
