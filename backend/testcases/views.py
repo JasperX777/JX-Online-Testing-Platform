@@ -1,4 +1,3 @@
-from django.db.models import Q
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
 
@@ -6,6 +5,7 @@ from .models import TestCase
 from .permissions import TestCaseAccessPermission
 from .serializers import TestCaseSerializer
 from .services import create_testcase, filter_testcases
+
 
 class TestCaseViewSet(ModelViewSet):
     serializer_class = TestCaseSerializer
@@ -17,13 +17,9 @@ class TestCaseViewSet(ModelViewSet):
 
         if user.is_superuser or role == 'admin':
             base_qs = TestCase.objects.all()
-        elif role == 'developer':
-            base_qs = TestCase.objects.filter(
-                Q(project__owner=user) | Q(project__project_members__user=user)
-            ).distinct()
         else:
-            # tester: only assigned project testcases
-            base_qs = TestCase.objects.filter(project__project_members__user=user).distinct()
+            # user role: only test cases created by self
+            base_qs = TestCase.objects.filter(created_by=user)
 
         project_id = self.request.query_params.get('project_id')
         category = self.request.query_params.get('category')

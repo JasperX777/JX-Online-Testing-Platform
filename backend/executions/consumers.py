@@ -1,7 +1,5 @@
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from django.db.models import Q
-
 from .models import TestExecution
 from .realtime import execution_group_name, project_group_name
 
@@ -73,8 +71,4 @@ class ExecutionStreamConsumer(AsyncJsonWebsocketConsumer):
         role = getattr(getattr(user, 'profile', None), 'role', None)
         if user.is_superuser or role == 'admin':
             return TestExecution.objects.all()
-        if role == 'developer':
-            return TestExecution.objects.filter(
-                Q(project__owner=user) | Q(project__project_members__user=user)
-            ).distinct()
-        return TestExecution.objects.filter(project__project_members__user=user).distinct()
+        return TestExecution.objects.filter(triggered_by=user)

@@ -4,34 +4,26 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 class TestCaseAccessPermission(BasePermission):
     """
     admin: full access
-    developer: can read/write testcases in visible projects
-    tester: read-only in visible projects
+    user: can read/write testcases in visible projects, with owner restrictions for update/delete
     """
 
     def has_permission(self, request, view):
-        role = getattr(getattr(request.user, 'profile', None), 'role', None)
-
         if request.method in SAFE_METHODS:
             return True
 
-        if request.method == 'POST':
-            return request.user.is_superuser or role in {'admin', 'developer'}
+        if view.action == 'create':
+            role = getattr(getattr(request.user, 'profile', None), 'role', None)
+            return request.user.is_superuser or role in {'admin', 'user'}
 
-        # PUT/PATCH/DELETE -> object permission handles final check
         return True
 
     def has_object_permission(self, request, view, obj):
-        role = getattr(getattr(request.user, 'profile', None), 'role', None)
-
-        if request.user.is_superuser or role == 'admin':
-            return True
-
         if request.method in SAFE_METHODS:
             return True
 
-        # tester cannot modify
-        if role == 'tester':
-            return False
+        role = getattr(getattr(request.user, 'profile', None), 'role', None)
+        if request.user.is_superuser or role == 'admin':
+            return True
 
-        # developer can modify only when owning the project
-        return obj.project.owner_id == request.user.id
+        # user can modify only when owning the project
+        return role == 'user' and obj.project.owner_id == request.user.id

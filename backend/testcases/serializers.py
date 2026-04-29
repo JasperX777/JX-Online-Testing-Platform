@@ -39,7 +39,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
         if user.is_superuser or role == 'admin':
             return project
 
-        if role == 'developer' and project.owner_id == user.id:
+        if role == 'user' and project.owner_id == user.id:
             return project
 
         raise serializers.ValidationError('You do not have permission to write test cases in this project.')

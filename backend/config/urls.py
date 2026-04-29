@@ -14,13 +14,16 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from accounts.views import MeView
+
+from accounts.views import MeView, RegisterView
+
 
 class PingView(APIView):
     permission_classes = [IsAuthenticated]
@@ -28,26 +31,27 @@ class PingView(APIView):
     def get(self, request):
         return Response({"message": "pong", "user": request.user.username})
 
+
 class HealthView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
         return Response({"status": "OK"})
 
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-
     path('api/', include('projects.urls')),
     path('api/', include('testcases.urls')),
     path('api/', include('executions.urls')),
 
     # Public
     path('api/health/', HealthView.as_view(), name='health'),
+    path('api/auth/register/', RegisterView.as_view(), name='auth_register'),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # Protected
     path('api/ping/', PingView.as_view(), name='ping'),
-
     path('api/auth/me/', MeView.as_view(), name='auth_me'),
 ]

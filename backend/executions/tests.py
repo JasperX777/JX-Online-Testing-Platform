@@ -57,7 +57,7 @@ class ExecutionLogModelTests(TestCase):
 class ExecutionLogApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='exec_api_user', password='pass123456')
-        self.user.profile.role = 'developer'
+        self.user.profile.role = 'user'
         self.user.profile.save()
 
         self.project = Project.objects.create(name='Exec API Project', description='', owner=self.user)
@@ -111,7 +111,7 @@ class ExecutionLogApiTests(APITestCase):
 class TestExecutionServiceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='exec_service_user', password='pass123456')
-        self.user.profile.role = 'developer'
+        self.user.profile.role = 'user'
         self.user.profile.save()
 
         self.project = Project.objects.create(name='Service Project', description='', owner=self.user)
@@ -178,15 +178,15 @@ class TestExecutionServiceTests(TestCase):
 class TestExecutionApiTests(APITestCase):
     def setUp(self):
         self.dev = User.objects.create_user(username='exec_dev', password='pass123456')
-        self.dev.profile.role = 'developer'
+        self.dev.profile.role = 'user'
         self.dev.profile.save()
 
         self.tester = User.objects.create_user(username='exec_tester', password='pass123456')
-        self.tester.profile.role = 'tester'
+        self.tester.profile.role = 'user'
         self.tester.profile.save()
 
         self.other_dev = User.objects.create_user(username='exec_other_dev', password='pass123456')
-        self.other_dev.profile.role = 'developer'
+        self.other_dev.profile.role = 'user'
         self.other_dev.profile.save()
 
         self.project = Project.objects.create(name='Execution Project', description='', owner=self.dev)
@@ -219,7 +219,7 @@ class TestExecutionApiTests(APITestCase):
             pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
         )
 
-        ProjectMember.objects.create(project=self.project, user=self.tester, role_in_project='tester')
+        ProjectMember.objects.create(project=self.project, user=self.tester, role_in_project='user')
 
     def auth(self, user):
         refresh = RefreshToken.for_user(user)
@@ -270,14 +270,14 @@ class TestExecutionApiTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('testcase', resp.data)
 
-    def test_tester_cannot_run_execution(self):
+    def test_assigned_user_cannot_run_execution_for_other_users_project(self):
         self.auth(self.tester)
         resp = self.client.post(
             '/api/executions/run/',
             {'project': self.project.id, 'testcase': self.tc.id},
             format='json',
         )
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_developer_cannot_run_hidden_project_execution(self):
         self.auth(self.dev)
@@ -286,6 +286,29 @@ class TestExecutionApiTests(APITestCase):
             {'project': self.other_project.id, 'testcase': self.other_tc.id},
             format='json',
         )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_developer_can_delete_execution_they_triggered(self):
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.dev,
+            status=TestExecution.Status.PENDING,
+        )
+        self.auth(self.dev)
+        resp = self.client.delete(f"/api/executions/{execution.id}/" )
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(TestExecution.objects.filter(id=execution.id).exists())
+
+    def test_other_user_cannot_delete_execution(self):
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.dev,
+            status=TestExecution.Status.PENDING,
+        )
+        self.auth(self.tester)
+        resp = self.client.delete(f"/api/executions/{execution.id}/" )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_execution_report_endpoint_returns_saved_report(self):
@@ -318,7 +341,7 @@ class TestExecutionApiTests(APITestCase):
 class ExecutionRealtimeTests(TransactionTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='ws_user', password='pass123456')
-        self.user.profile.role = 'developer'
+        self.user.profile.role = 'user'
         self.user.profile.save()
 
         self.project = Project.objects.create(name='Realtime Project', description='', owner=self.user)

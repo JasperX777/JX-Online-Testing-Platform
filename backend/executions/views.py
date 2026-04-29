@@ -1,14 +1,15 @@
 from django.db.models import Q
-from rest_framework import status
+from rest_framework import mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.viewsets import GenericViewSet, ReadOnlyModelViewSet
 
 from projects.models import Project
 
 from .models import ExecutionLog, TestExecution
+from .permissions import CanManageExecution
 from .realtime import broadcast_execution_event
 from .serializers import (
     ExecutionLogSerializer,
@@ -26,15 +27,15 @@ class ExecutionAccessMixin:
 
         if user.is_superuser or role == 'admin':
             return Q()
-        if role == 'developer':
-            return Q(owner=user) | Q(project_members__user=user)
-        return Q(project_members__user=user)
+        return Q(owner=user)
 
     def get_execution_visibility_filter(self):
-        project_filter = self.get_project_visibility_filter()
-        if not project_filter:
+        user = self.request.user
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+
+        if user.is_superuser or role == 'admin':
             return Q()
-        return Q(project__in=Project.objects.filter(project_filter))
+        return Q(triggered_by=user)
 
 
 class ExecutionLogViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
@@ -42,8 +43,12 @@ class ExecutionLogViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        visibility_filter = self.get_execution_visibility_filter()
-        qs = ExecutionLog.objects.all() if not visibility_filter else ExecutionLog.objects.filter(visibility_filter).distinct()
+        user = self.request.user
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if user.is_superuser or role == 'admin':
+            qs = ExecutionLog.objects.all()
+        else:
+            qs = ExecutionLog.objects.filter(execution__triggered_by=user).distinct()
 
         project_id = self.request.query_params.get('project_id')
         level = self.request.query_params.get('level')
@@ -62,9 +67,15 @@ class ExecutionLogViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
         return qs
 
 
-class TestExecutionViewSet(ExecutionAccessMixin, ReadOnlyModelViewSet):
+class TestExecutionViewSet(
+    ExecutionAccessMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    GenericViewSet,
+):
     serializer_class = TestExecutionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageExecution]
 
     def get_queryset(self):
         visibility_filter = self.get_execution_visibility_filter()
@@ -106,7 +117,7 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         role = getattr(getattr(request.user, 'profile', None), 'role', None)
-        if not (request.user.is_superuser or role in {'admin', 'developer'}):
+        if not (request.user.is_superuser or role in {'admin', 'user'}):
             return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         execution = TestExecution.objects.create(

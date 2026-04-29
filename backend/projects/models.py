@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+
 class Project(models.Model):
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True)
@@ -26,11 +27,11 @@ class Project(models.Model):
 
 class ProjectMember(models.Model):
     class MemberRole(models.TextChoices):
-        TESTER = 'tester', 'Tester'
+        USER = 'user', 'User'
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_members')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='project_memberships')
-    role_in_project = models.CharField(max_length=20, choices=MemberRole.choices, default=MemberRole.TESTER)
+    role_in_project = models.CharField(max_length=20, choices=MemberRole.choices, default=MemberRole.USER)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

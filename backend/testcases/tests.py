@@ -12,7 +12,7 @@ User = get_user_model()
 class TestCaseApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='tc_user', password='pass123456')
-        self.user.profile.role = 'developer'
+        self.user.profile.role = 'user'
         self.user.profile.save()
 
         self.project = Project.objects.create(
@@ -48,9 +48,9 @@ class TestCaseApiTests(APITestCase):
         self.assertEqual(obj.created_by_id, self.user.id)
         self.assertEqual(obj.test_type, TestCase.TestType.FUNCTIONAL)
 
-    def test_developer_cannot_create_testcase_in_other_users_project(self):
+    def test_user_cannot_create_testcase_in_other_users_project(self):
         other_dev = User.objects.create_user(username='tc_other_dev', password='pass123456')
-        other_dev.profile.role = 'developer'
+        other_dev.profile.role = 'user'
         other_dev.profile.save()
         hidden_project = Project.objects.create(name='Hidden', description='', owner=other_dev)
 
@@ -74,9 +74,9 @@ class TestCaseApiTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('project', resp.data)
 
-    def test_developer_cannot_move_testcase_to_other_users_project(self):
+    def test_user_cannot_move_testcase_to_other_users_project(self):
         other_dev = User.objects.create_user(username='tc_other_dev2', password='pass123456')
-        other_dev.profile.role = 'developer'
+        other_dev.profile.role = 'user'
         other_dev.profile.save()
         hidden_project = Project.objects.create(name='Hidden', description='', owner=other_dev)
         tc = TestCase.objects.create(
@@ -148,13 +148,13 @@ class TestCaseApiTests(APITestCase):
         self.assertEqual(len(resp.data), 1)
         self.assertIn('login', resp.data[0]['tags'])
 
-    def test_tester_cannot_create_testcase(self):
+    def test_assigned_user_cannot_create_testcase(self):
         tester = User.objects.create_user(username='tc_tester', password='pass123456')
-        tester.profile.role = 'tester'
+        tester.profile.role = 'user'
         tester.profile.save()
 
         from projects.models import ProjectMember
-        ProjectMember.objects.create(project=self.project, user=tester, role_in_project='tester')
+        ProjectMember.objects.create(project=self.project, user=tester, role_in_project='user')
 
         refresh = RefreshToken.for_user(tester)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
@@ -171,15 +171,15 @@ class TestCaseApiTests(APITestCase):
             'status': 'draft',
         }
         resp = self.client.post('/api/testcases/', payload, format='json')
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_tester_cannot_update_or_delete_assigned_testcase(self):
+    def test_assigned_user_cannot_update_or_delete_assigned_testcase(self):
         tester = User.objects.create_user(username='tc_tester2', password='pass123456')
-        tester.profile.role = 'tester'
+        tester.profile.role = 'user'
         tester.profile.save()
 
         from projects.models import ProjectMember
-        ProjectMember.objects.create(project=self.project, user=tester, role_in_project='tester')
+        ProjectMember.objects.create(project=self.project, user=tester, role_in_project='user')
 
         tc = TestCase.objects.create(
             project=self.project,
@@ -212,7 +212,7 @@ class TestCaseApiTests(APITestCase):
             },
             format='json',
         )
-        self.assertEqual(put_resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(put_resp.status_code, status.HTTP_404_NOT_FOUND)
 
         delete_resp = self.client.delete(f'/api/testcases/{tc.id}/')
-        self.assertEqual(delete_resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(delete_resp.status_code, status.HTTP_404_NOT_FOUND)
