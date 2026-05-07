@@ -7,6 +7,7 @@ import ExecutionDetailPage from './pages/ExecutionDetailPage'
 import ExecutionsPage from './pages/ExecutionsPage'
 import LoginPage from './pages/LoginPage'
 import ProjectsPage from './pages/ProjectsPage'
+import TestCaseListPage from './pages/TestCaseListPage'
 import TestCasesPage from './pages/TestCasesPage'
 
 export default function App() {
@@ -18,7 +19,8 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/testcases" element={<TestCasesPage />} />
+          <Route path="/testcases" element={<TestCaseListPage />} />
+          <Route path="/testcases/create" element={<TestCasesPage />} />
           <Route path="/executions" element={<ExecutionsPage />} />
           <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
         </Route>

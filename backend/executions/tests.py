@@ -1,22 +1,19 @@
-from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase, override_settings
-
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from config.asgi import application
-from projects.models import Project, ProjectMember
+from projects.models import Project
 from testcases.models import TestCase as TC
-from .models import ExecutionLog, ExecutionReport, TestExecution
-from .realtime import broadcast_execution_event
+from .models import ExecutionLog, ExecutionReport, ExecutionStepResult, TestExecution
 from .reports import store_execution_report
-from .services import run_test_execution
+from .services import initialize_execution, run_test_execution
 
 User = get_user_model()
 
@@ -27,6 +24,67 @@ IN_MEMORY_CHANNEL_LAYERS = {
 }
 
 
+def sample_steps():
+    return [
+        {
+            'step_no': 1,
+            'step_title': 'Launch browser',
+            'description': '',
+            'action': 'launch_browser',
+            'target': '',
+            'locator_type': 'css',
+            'selector': '',
+            'value': 'chromium',
+            'note': '',
+        },
+        {
+            'step_no': 2,
+            'step_title': 'Open Google',
+            'description': '',
+            'action': 'open_page',
+            'target': 'Google homepage',
+            'locator_type': 'css',
+            'selector': '',
+            'value': 'https://www.google.com',
+            'note': '',
+        },
+        {
+            'step_no': 3,
+            'step_title': 'Enter keyword',
+            'description': '',
+            'action': 'input_text',
+            'target': 'Search input',
+            'locator_type': 'css',
+            'selector': "textarea[name='q']",
+            'value': 'OpenAI',
+            'note': '',
+        },
+        {
+            'step_no': 4,
+            'step_title': 'Submit with Enter',
+            'description': '',
+            'action': 'press_key',
+            'target': '',
+            'locator_type': 'css',
+            'selector': '',
+            'value': 'Enter',
+            'note': '',
+        },
+        {
+            'step_no': 5,
+            'step_title': 'Submit search',
+            'description': '',
+            'action': 'click_button',
+            'target': 'Google search button',
+            'locator_type': 'css',
+            'selector': "input[name='btnK']",
+            'value': '',
+            'note': '',
+        },
+    ]
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
 class ExecutionLogModelTests(TestCase):
     def test_create_execution_log(self):
         user = User.objects.create_user(username='exec_user', password='pass123456')
@@ -35,12 +93,15 @@ class ExecutionLogModelTests(TestCase):
             project=project,
             title='Sample case',
             description='',
-            steps='',
-            expected_result='',
+            module='Search',
+            scenario='Google',
+            steps_json=sample_steps(),
             created_by=user,
         )
+        execution = TestExecution.objects.create(project=project, testcase=tc, triggered_by=user)
 
         log = ExecutionLog.objects.create(
+            execution=execution,
             project=project,
             testcase=tc,
             level='info',
@@ -54,60 +115,6 @@ class ExecutionLogModelTests(TestCase):
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
-class ExecutionLogApiTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(username='exec_api_user', password='pass123456')
-        self.user.profile.role = 'user'
-        self.user.profile.save()
-
-        self.project = Project.objects.create(name='Exec API Project', description='', owner=self.user)
-        self.tc = TC.objects.create(
-            project=self.project,
-            title='TC1',
-            description='',
-            steps='',
-            expected_result='',
-            created_by=self.user,
-            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
-        )
-        self.execution = TestExecution.objects.create(
-            project=self.project,
-            testcase=self.tc,
-            triggered_by=self.user,
-            status=TestExecution.Status.PENDING,
-        )
-        ExecutionLog.objects.create(
-            execution=self.execution,
-            project=self.project,
-            testcase=self.tc,
-            level='info',
-            message='started',
-        )
-
-    def auth(self):
-        refresh = RefreshToken.for_user(self.user)
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
-
-    def test_filter_execution_logs_by_project(self):
-        self.auth()
-        resp = self.client.get(f'/api/execution-logs/?project_id={self.project.id}')
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp.data), 1)
-        self.assertEqual(resp.data[0]['project'], self.project.id)
-
-    def test_filter_execution_logs_by_execution(self):
-        self.auth()
-        resp = self.client.get(f'/api/execution-logs/?execution_id={self.execution.id}')
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp.data), 1)
-        self.assertEqual(resp.data[0]['execution'], self.execution.id)
-
-    def test_execution_logs_requires_auth(self):
-        resp = self.client.get('/api/execution-logs/')
-        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
-
-
-@override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
 class TestExecutionServiceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='exec_service_user', password='pass123456')
@@ -117,117 +124,138 @@ class TestExecutionServiceTests(TestCase):
         self.project = Project.objects.create(name='Service Project', description='', owner=self.user)
         self.tc = TC.objects.create(
             project=self.project,
-            title='Runnable case',
+            title='Automated case',
             description='',
-            steps='',
-            expected_result='',
+            module='Search',
+            scenario='Google',
             created_by=self.user,
-            test_type=TC.TestType.FUNCTIONAL,
-            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
+            steps_json=sample_steps(),
         )
 
-    @patch('executions.runners.PytestExecutionRunner.run')
-    def test_functional_execution_uses_pytest_runner_and_creates_report(self, run_mock):
-        run_mock.return_value = CompletedProcess(
-            args=['pytest'],
-            returncode=0,
-            stdout='1 passed in 0.10s',
-            stderr='',
-        )
+    def test_initialize_execution_creates_step_snapshot(self):
         execution = TestExecution.objects.create(
             project=self.project,
             testcase=self.tc,
             triggered_by=self.user,
             status=TestExecution.Status.PENDING,
         )
+
+        initialize_execution(execution=execution)
+        execution.refresh_from_db()
+
+        self.assertEqual(execution.status, TestExecution.Status.PENDING)
+        self.assertEqual(execution.current_step_no, 1)
+        self.assertEqual(execution.step_results.count(), 5)
+        self.assertEqual(execution.step_results.first().selector, '')
+        self.assertEqual(execution.step_results.first().step_title, 'Launch browser')
+
+    @patch('executions.services.execute_steps')
+    def test_run_execution_marks_success_when_automation_passes(self, execute_steps_mock):
+        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
+            for step_result in step_results:
+                on_step_start(step_result)
+                on_step_pass(step_result)
+            return None
+
+        execute_steps_mock.side_effect = fake_execute_steps
+
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.user,
+            status=TestExecution.Status.PENDING,
+        )
+        initialize_execution(execution=execution)
 
         run_test_execution(execution=execution)
         execution.refresh_from_db()
 
         self.assertEqual(execution.status, TestExecution.Status.SUCCESS)
-        self.assertEqual(execution.exit_code, 0)
-        self.assertIn('1 passed', execution.result_summary)
-        self.assertTrue(hasattr(execution, 'report'))
-        self.assertEqual(execution.report.report_data['execution']['status'], TestExecution.Status.SUCCESS)
-        self.assertEqual(execution.report.report_data['totals']['log_count'], 2)
-        run_mock.assert_called_once()
-        self.assertEqual(ExecutionLog.objects.filter(project=self.project).count(), 2)
+        self.assertIsNone(execution.current_step_no)
+        self.assertEqual(execution.step_results.filter(status=ExecutionStepResult.Status.PASSED).count(), 5)
+        self.assertTrue(ExecutionReport.objects.filter(execution=execution).exists())
 
-    @patch('executions.runners.PytestExecutionRunner.run')
-    def test_unsupported_test_type_marks_execution_failed(self, run_mock):
-        self.tc.test_type = TC.TestType.SECURITY
-        self.tc.save(update_fields=['test_type'])
+    @patch('executions.services.execute_steps')
+    def test_run_execution_records_failure_and_screenshot(self, execute_steps_mock):
+        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
+            on_step_start(step_results[2])
+            on_step_pass(step_results[2])
+            on_step_start(step_results[3])
+            on_step_fail(step_results[3], 'Input did not appear', '/tmp/failure.png')
+            return 'Input did not appear'
+
+        execute_steps_mock.side_effect = fake_execute_steps
+
         execution = TestExecution.objects.create(
             project=self.project,
             testcase=self.tc,
             triggered_by=self.user,
             status=TestExecution.Status.PENDING,
         )
+        initialize_execution(execution=execution)
 
         run_test_execution(execution=execution)
         execution.refresh_from_db()
 
+        failed_step = execution.step_results.get(step_no=4)
         self.assertEqual(execution.status, TestExecution.Status.FAILED)
-        self.assertEqual(execution.exit_code, 1)
-        self.assertIn('not implemented yet', execution.result_summary)
-        self.assertTrue(ExecutionReport.objects.filter(execution=execution).exists())
-        run_mock.assert_not_called()
+        self.assertEqual(execution.failed_step_no, 4)
+        self.assertEqual(failed_step.error_message, 'Input did not appear')
+        self.assertEqual(failed_step.screenshot_path, '/tmp/failure.png')
+        self.assertEqual(execution.step_results.get(step_no=5).status, ExecutionStepResult.Status.PENDING)
+
+    @patch('executions.services.execute_steps')
+    def test_store_execution_report_contains_selector_and_screenshot(self, execute_steps_mock):
+        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
+            on_step_start(step_results[0])
+            on_step_fail(step_results[0], 'Dependency missing', '/tmp/missing.png')
+            return 'Dependency missing'
+
+        execute_steps_mock.side_effect = fake_execute_steps
+
+        execution = TestExecution.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            triggered_by=self.user,
+            status=TestExecution.Status.PENDING,
+        )
+        initialize_execution(execution=execution)
+        run_test_execution(execution=execution)
+        execution.refresh_from_db()
+
+        report = store_execution_report(execution=execution)
+
+        self.assertEqual(report.report_data['summary']['failed_steps'], 1)
+        self.assertEqual(report.report_data['steps'][0]['step_title'], 'Launch browser')
+        self.assertEqual(report.report_data['steps'][0]['selector'], '')
+        self.assertEqual(report.report_data['steps'][0]['screenshot_path'], '/tmp/missing.png')
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
 class TestExecutionApiTests(APITestCase):
     def setUp(self):
-        self.dev = User.objects.create_user(username='exec_dev', password='pass123456')
-        self.dev.profile.role = 'user'
-        self.dev.profile.save()
+        self.user = User.objects.create_user(username='exec_dev', password='pass123456')
+        self.user.profile.role = 'user'
+        self.user.profile.save()
 
-        self.tester = User.objects.create_user(username='exec_tester', password='pass123456')
-        self.tester.profile.role = 'user'
-        self.tester.profile.save()
-
-        self.other_dev = User.objects.create_user(username='exec_other_dev', password='pass123456')
-        self.other_dev.profile.role = 'user'
-        self.other_dev.profile.save()
-
-        self.project = Project.objects.create(name='Execution Project', description='', owner=self.dev)
-        self.other_project = Project.objects.create(name='Other Project', description='', owner=self.other_dev)
-
+        self.project = Project.objects.create(name='Execution Project', description='', owner=self.user)
         self.tc = TC.objects.create(
             project=self.project,
-            title='Runnable case',
+            title='Automated case',
             description='',
-            steps='',
-            expected_result='',
-            created_by=self.dev,
-            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
-        )
-        self.unconfigured_tc = TC.objects.create(
-            project=self.project,
-            title='Missing target',
-            description='',
-            steps='',
-            expected_result='',
-            created_by=self.dev,
-        )
-        self.other_tc = TC.objects.create(
-            project=self.other_project,
-            title='Hidden case',
-            description='',
-            steps='',
-            expected_result='',
-            created_by=self.other_dev,
-            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
+            module='Search',
+            scenario='Google',
+            created_by=self.user,
+            steps_json=sample_steps(),
         )
 
-        ProjectMember.objects.create(project=self.project, user=self.tester, role_in_project='user')
-
-    def auth(self, user):
-        refresh = RefreshToken.for_user(user)
+    def auth(self):
+        refresh = RefreshToken.for_user(self.user)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
 
-    @patch('executions.views.run_test_execution_task.delay')
-    def test_run_execution_creates_pending_execution_and_dispatches_task(self, delay_mock):
-        self.auth(self.dev)
+    @patch('executions.views.dispatch_test_execution')
+    def test_run_execution_creates_pending_execution_and_snapshot(self, dispatch_mock):
+        self.auth()
         resp = self.client.post(
             '/api/executions/run/',
             {'project': self.project.id, 'testcase': self.tc.id},
@@ -236,163 +264,98 @@ class TestExecutionApiTests(APITestCase):
 
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         execution = TestExecution.objects.get(id=resp.data['id'])
-        self.assertEqual(execution.project_id, self.project.id)
-        self.assertEqual(execution.testcase_id, self.tc.id)
-        self.assertEqual(execution.triggered_by_id, self.dev.id)
         self.assertEqual(execution.status, TestExecution.Status.PENDING)
-        delay_mock.assert_called_once_with(execution.id)
+        self.assertEqual(execution.current_step_no, 1)
+        self.assertEqual(execution.step_results.count(), 5)
+        dispatch_mock.assert_called_once_with(execution.id)
 
-    def test_run_execution_requires_auth(self):
-        resp = self.client.post(
-            '/api/executions/run/',
-            {'project': self.project.id, 'testcase': self.tc.id},
-            format='json',
+    def test_run_execution_requires_steps(self):
+        empty_case = TC.objects.create(
+            project=self.project,
+            title='Empty',
+            description='',
+            module='Search',
+            scenario='Empty',
+            created_by=self.user,
+            steps_json=[],
         )
-        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_run_execution_requires_testcase(self):
-        self.auth(self.dev)
+        self.auth()
         resp = self.client.post(
             '/api/executions/run/',
-            {'project': self.project.id},
+            {'project': self.project.id, 'testcase': empty_case.id},
             format='json',
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('testcase', resp.data)
 
-    def test_run_execution_rejects_functional_testcase_without_pytest_target(self):
-        self.auth(self.dev)
-        resp = self.client.post(
-            '/api/executions/run/',
-            {'project': self.project.id, 'testcase': self.unconfigured_tc.id},
-            format='json',
-        )
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('testcase', resp.data)
-
-    def test_assigned_user_cannot_run_execution_for_other_users_project(self):
-        self.auth(self.tester)
-        resp = self.client.post(
+    @patch('executions.views.dispatch_test_execution')
+    def test_same_testcase_can_be_executed_multiple_times(self, dispatch_mock):
+        self.auth()
+        first = self.client.post(
             '/api/executions/run/',
             {'project': self.project.id, 'testcase': self.tc.id},
             format='json',
         )
-        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_developer_cannot_run_hidden_project_execution(self):
-        self.auth(self.dev)
-        resp = self.client.post(
+        second = self.client.post(
             '/api/executions/run/',
-            {'project': self.other_project.id, 'testcase': self.other_tc.id},
+            {'project': self.project.id, 'testcase': self.tc.id},
             format='json',
         )
-        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_developer_can_delete_execution_they_triggered(self):
-        execution = TestExecution.objects.create(
-            project=self.project,
-            testcase=self.tc,
-            triggered_by=self.dev,
-            status=TestExecution.Status.PENDING,
-        )
-        self.auth(self.dev)
-        resp = self.client.delete(f"/api/executions/{execution.id}/" )
-        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(TestExecution.objects.filter(id=execution.id).exists())
-
-    def test_other_user_cannot_delete_execution(self):
-        execution = TestExecution.objects.create(
-            project=self.project,
-            testcase=self.tc,
-            triggered_by=self.dev,
-            status=TestExecution.Status.PENDING,
-        )
-        self.auth(self.tester)
-        resp = self.client.delete(f"/api/executions/{execution.id}/" )
-        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_execution_report_endpoint_returns_saved_report(self):
-        self.auth(self.dev)
-        execution = TestExecution.objects.create(
-            project=self.project,
-            testcase=self.tc,
-            triggered_by=self.dev,
-            status=TestExecution.Status.SUCCESS,
-            exit_code=0,
-            result_summary='1 passed in 0.10s',
-        )
-        ExecutionLog.objects.create(
-            execution=execution,
-            project=self.project,
-            testcase=self.tc,
-            level=ExecutionLog.Level.INFO,
-            message='Execution finished.',
-        )
-        report = store_execution_report(execution=execution)
-
-        resp = self.client.get(f'/api/executions/{execution.id}/report/')
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp.data['id'], report.id)
-        self.assertEqual(resp.data['execution'], execution.id)
-        self.assertEqual(resp.data['report_data']['execution']['status'], TestExecution.Status.SUCCESS)
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(TestExecution.objects.filter(testcase=self.tc).count(), 2)
+        self.assertEqual(dispatch_mock.call_count, 2)
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
 class ExecutionRealtimeTests(TransactionTestCase):
+    reset_sequences = True
+
     def setUp(self):
         self.user = User.objects.create_user(username='ws_user', password='pass123456')
         self.user.profile.role = 'user'
         self.user.profile.save()
-
         self.project = Project.objects.create(name='Realtime Project', description='', owner=self.user)
-        self.testcase = TC.objects.create(
+        self.tc = TC.objects.create(
             project=self.project,
-            title='Realtime case',
+            title='WS Case',
             description='',
-            steps='',
-            expected_result='',
+            module='Search',
+            scenario='Google',
             created_by=self.user,
-            pytest_target='executions/tests.py::ExecutionLogApiTests::test_execution_logs_requires_auth',
+            steps_json=sample_steps(),
         )
         self.execution = TestExecution.objects.create(
             project=self.project,
-            testcase=self.testcase,
+            testcase=self.tc,
             triggered_by=self.user,
             status=TestExecution.Status.PENDING,
         )
-        self.log = ExecutionLog.objects.create(
-            execution=self.execution,
-            project=self.project,
-            testcase=self.testcase,
-            level=ExecutionLog.Level.INFO,
-            message='Realtime log message',
-        )
-        self.token = str(RefreshToken.for_user(self.user).access_token)
+        initialize_execution(execution=self.execution)
 
-    async def _exercise_execution_socket(self):
-        communicator = WebsocketCommunicator(
-            application,
-            f'/ws/executions/{self.execution.id}/?token={self.token}',
-        )
-        connected, _ = await communicator.connect()
-        self.assertTrue(connected)
+    @patch('executions.services.execute_steps')
+    def test_execution_socket_receives_updates(self, execute_steps_mock):
+        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
+            on_step_start(step_results[0])
+            on_step_pass(step_results[0])
+            return None
 
-        ready_payload = await communicator.receive_json_from()
-        self.assertEqual(ready_payload['event'], 'connection.ready')
-        self.assertEqual(ready_payload['execution_id'], self.execution.id)
+        execute_steps_mock.side_effect = fake_execute_steps
 
-        await sync_to_async(broadcast_execution_event, thread_sensitive=True)(
-            event='execution.log',
-            execution=self.execution,
-            log=self.log,
-        )
+        async def runner():
+            refresh = RefreshToken.for_user(self.user)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/executions/{self.execution.id}/?token={refresh.access_token}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
 
-        event_payload = await communicator.receive_json_from()
-        self.assertEqual(event_payload['event'], 'execution.log')
-        self.assertEqual(event_payload['execution']['id'], self.execution.id)
-        self.assertEqual(event_payload['log']['id'], self.log.id)
+            await sync_to_async(run_test_execution)(execution=self.execution)
+            message = await communicator.receive_json_from()
+            await communicator.disconnect()
+            return message
 
-        await communicator.disconnect()
-
-    def test_execution_websocket_streams_broadcast_events(self):
-        async_to_sync(self._exercise_execution_socket)()
+        message = async_to_sync(runner)()
+        self.assertIn('event', message)

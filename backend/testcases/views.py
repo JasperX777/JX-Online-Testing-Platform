@@ -1,6 +1,10 @@
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from .picker import get_picker_session, start_picker_session, stop_picker_session
 from .models import TestCase
 from .permissions import TestCaseAccessPermission
 from .serializers import TestCaseSerializer
@@ -34,3 +38,37 @@ class TestCaseViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         create_testcase(serializer=serializer, user=self.request.user)
+
+
+class PickerSessionStartView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        url = (request.data.get('url') or '').strip()
+        browser_name = (request.data.get('browser_name') or 'chromium').strip().lower()
+
+        if not url:
+            return Response({'detail': 'A page URL is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = start_picker_session(url=url, browser_name=browser_name or 'chromium')
+        return Response(session, status=status.HTTP_201_CREATED)
+
+
+class PickerSessionDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id: str):
+        session = get_picker_session(session_id)
+        if session is None:
+            return Response({'detail': 'Picker session not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(session)
+
+
+class PickerSessionStopView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id: str):
+        session = stop_picker_session(session_id)
+        if session is None:
+            return Response({'detail': 'Picker session not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(session)

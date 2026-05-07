@@ -36,8 +36,10 @@ class TestExecution(models.Model):
         choices=Status.choices,
         default=Status.PENDING,
     )
-    exit_code = models.IntegerField(null=True, blank=True)
     result_summary = models.TextField(blank=True)
+    failure_reason = models.TextField(blank=True)
+    failed_step_no = models.IntegerField(null=True, blank=True)
+    current_step_no = models.IntegerField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -47,6 +49,43 @@ class TestExecution(models.Model):
 
     def __str__(self) -> str:
         return f'{self.project_id}:{self.status}:{self.created_at}'
+
+
+class ExecutionStepResult(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        PASSED = 'passed', 'Passed'
+        FAILED = 'failed', 'Failed'
+
+    execution = models.ForeignKey(
+        TestExecution,
+        on_delete=models.CASCADE,
+        related_name='step_results',
+    )
+    step_no = models.IntegerField()
+    step_title = models.CharField(max_length=255, blank=True)
+    description = models.TextField(blank=True)
+    action = models.CharField(max_length=50)
+    target = models.CharField(max_length=255, blank=True)
+    locator_type = models.CharField(max_length=20, blank=True, default='css')
+    selector = models.CharField(max_length=255, blank=True)
+    value = models.TextField(blank=True)
+    note = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    executor_note = models.TextField(blank=True)
+    error_message = models.TextField(blank=True)
+    screenshot_path = models.CharField(max_length=500, blank=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['step_no']
+
+    def __str__(self) -> str:
+        return f'{self.execution_id}:{self.step_no}:{self.status}'
 
 
 class ExecutionLog(models.Model):

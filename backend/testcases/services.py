@@ -1,5 +1,6 @@
 from .models import TestCase
 
+
 def filter_testcases(*, queryset, project_id=None, category=None, tag=None):
     qs = queryset
 
@@ -11,6 +12,7 @@ def filter_testcases(*, queryset, project_id=None, category=None, tag=None):
         qs = qs.filter(tags__contains=[tag])
 
     return qs
+
 
 def create_testcase(*, serializer, user):
     serializer.save(created_by=user)

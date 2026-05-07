@@ -114,7 +114,11 @@ export default function DashboardPage() {
                     <td>
                       <StatusPill status={execution.status} />
                     </td>
-                    <td className="truncate">{execution.result_summary || '-'}</td>
+                    <td className="summary-cell">
+                      <span className="truncate-text" title={execution.result_summary || '-'}>
+                        {execution.result_summary || '-'}
+                      </span>
+                    </td>
                     <td>
                       <Link className="inline-link" to={`/executions/${execution.id}`}>
                         Detail

@@ -3,10 +3,11 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 const links = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/projects', label: 'Projects' },
-  { to: '/testcases', label: 'Test Cases' },
-  { to: '/executions', label: 'Executions' },
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/projects', label: 'Projects', end: true },
+  { to: '/testcases/create', label: 'Create Test Case', end: true },
+  { to: '/testcases', label: 'Test Case List', end: true },
+  { to: '/executions', label: 'Executions', end: false },
 ]
 
 export default function AppShell() {
@@ -30,7 +31,7 @@ export default function AppShell() {
             <NavLink
               key={link.to}
               to={link.to}
-              end={link.to === '/'}
+              end={link.end}
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
             >
               {link.label}

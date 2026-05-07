@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from django.conf import settings
 
-from .models import ExecutionLog, ExecutionReport, TestExecution
+from .models import ExecutionLog, ExecutionReport, ExecutionStepResult, TestExecution
 
 
 class ExecutionLogSerializer(serializers.ModelSerializer):
@@ -38,8 +39,11 @@ class ExecutionReportSerializer(serializers.ModelSerializer):
 class TestExecutionSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True)
     testcase_title = serializers.CharField(source='testcase.title', read_only=True)
+    testcase_module = serializers.CharField(source='testcase.module', read_only=True)
+    testcase_scenario = serializers.CharField(source='testcase.scenario', read_only=True)
     triggered_by_username = serializers.CharField(source='triggered_by.username', read_only=True)
     report = ExecutionReportSerializer(read_only=True)
+    step_results = serializers.SerializerMethodField()
 
     class Meta:
         model = TestExecution
@@ -49,17 +53,61 @@ class TestExecutionSerializer(serializers.ModelSerializer):
             'project_name',
             'testcase',
             'testcase_title',
+            'testcase_module',
+            'testcase_scenario',
             'triggered_by',
             'triggered_by_username',
             'status',
-            'exit_code',
             'result_summary',
+            'failure_reason',
+            'failed_step_no',
+            'current_step_no',
             'started_at',
             'finished_at',
             'created_at',
+            'step_results',
             'report',
         )
         read_only_fields = fields
+
+    def get_step_results(self, obj):
+        return ExecutionStepResultSerializer(obj.step_results.all(), many=True).data
+
+
+class ExecutionStepResultSerializer(serializers.ModelSerializer):
+    screenshot_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExecutionStepResult
+        fields = (
+            'id',
+            'execution',
+            'step_no',
+            'step_title',
+            'description',
+            'action',
+            'target',
+            'locator_type',
+            'selector',
+            'value',
+            'note',
+            'status',
+            'executor_note',
+            'error_message',
+            'screenshot_path',
+            'screenshot_url',
+            'executed_at',
+        )
+        read_only_fields = fields
+
+    def get_screenshot_url(self, obj):
+        if not obj.screenshot_path:
+            return ''
+        media_root = str(settings.MEDIA_ROOT)
+        if obj.screenshot_path.startswith(media_root):
+            relative_path = obj.screenshot_path[len(media_root):].lstrip('/\\')
+            return f"{settings.MEDIA_URL}{relative_path.replace('\\', '/')}"
+        return obj.screenshot_path
 
 
 class TestExecutionRunSerializer(serializers.Serializer):
@@ -79,8 +127,8 @@ class TestExecutionRunSerializer(serializers.Serializer):
             raise serializers.ValidationError({'testcase': 'Test case not found.'})
         if testcase.project_id != project.id:
             raise serializers.ValidationError({'testcase': 'Test case does not belong to this project.'})
-        if testcase.test_type == TestCase.TestType.FUNCTIONAL and not testcase.pytest_target:
-            raise serializers.ValidationError({'testcase': 'Functional test case requires a pytest target.'})
+        if not testcase.steps_json:
+            raise serializers.ValidationError({'testcase': 'Test case requires at least one step.'})
 
         attrs['project_obj'] = project
         attrs['testcase_obj'] = testcase

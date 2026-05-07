@@ -10,14 +10,14 @@ from projects.models import Project
 
 from .models import ExecutionLog, TestExecution
 from .permissions import CanManageExecution
-from .realtime import broadcast_execution_event
 from .serializers import (
     ExecutionLogSerializer,
     ExecutionReportSerializer,
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
-from .tasks import run_test_execution_task
+from .services import initialize_execution
+from .tasks import dispatch_test_execution
 
 
 class ExecutionAccessMixin:
@@ -79,7 +79,8 @@ class TestExecutionViewSet(
 
     def get_queryset(self):
         visibility_filter = self.get_execution_visibility_filter()
-        qs = TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').all() if not visibility_filter else TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').filter(visibility_filter).distinct()
+        base_qs = TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').prefetch_related('step_results')
+        qs = base_qs.all() if not visibility_filter else base_qs.filter(visibility_filter).distinct()
 
         project_id = self.request.query_params.get('project_id')
         status_value = self.request.query_params.get('status')
@@ -126,7 +127,7 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
             triggered_by=request.user,
             status=TestExecution.Status.PENDING,
         )
-        broadcast_execution_event(event='execution.pending', execution=execution)
-        run_test_execution_task.delay(execution.id)
+        initialize_execution(execution=execution)
+        dispatch_test_execution(execution.id)
 
         return Response(TestExecutionSerializer(execution).data, status=status.HTTP_201_CREATED)

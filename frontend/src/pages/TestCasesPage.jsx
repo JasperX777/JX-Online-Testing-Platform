@@ -1,84 +1,142 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import ActionModal from '../components/ActionModal'
+import ElementPickerPanel from '../components/ElementPickerPanel'
 import { api } from '../lib/api'
 
-const priorities = ['low', 'medium', 'high']
+const priorities = ['low', 'medium', 'high', 'critical']
 const statuses = ['draft', 'ready', 'deprecated']
-const testTypes = ['functional', 'security', 'performance', 'penetration']
+const stepActions = [
+  { value: 'launch_browser', label: 'Launch Browser' },
+  { value: 'open_page', label: 'Open Page' },
+  { value: 'click_button', label: 'Click Button' },
+  { value: 'input_text', label: 'Input Text' },
+  { value: 'press_key', label: 'Press Key' },
+  { value: 'verify_element', label: 'Verify Element' },
+]
+
+function createEmptyStep() {
+  return {
+    step_title: '',
+    action: '',
+    target: '',
+    locator_type: 'css',
+    selector: '',
+    value: '',
+    note: '',
+  }
+}
+
+function buildDescription(step) {
+  switch (step.action) {
+    case 'launch_browser':
+      return `Launch the ${step.value || 'selected'} browser.`
+    case 'open_page':
+      return `Open ${step.value || 'the target page'} in the browser.`
+    case 'input_text':
+      return `Type ${step.value || 'the value'} into ${step.target || step.step_title || 'the selected field'}.`
+    case 'click_button':
+      return `Click ${step.target || step.step_title || 'the selected button'}.`
+    case 'press_key':
+      return `Press the ${step.value || 'configured'} key.`
+    case 'verify_element':
+      return `Verify that ${step.target || step.step_title || 'the selected element'} is visible.`
+    default:
+      return step.step_title || 'Configure this step.'
+  }
+}
+
+function normalizeSteps(steps) {
+  return steps.map((step, index) => ({
+    step_no: index + 1,
+    step_title: step.step_title.trim(),
+    description: buildDescription(step),
+    action: step.action,
+    target: step.target.trim() || step.step_title.trim(),
+    locator_type: 'css',
+    selector: step.selector.trim(),
+    value: step.value,
+    note: step.note,
+  }))
+}
+
+function formatStep(step) {
+  const title = step.step_title ? `${step.step_title}: ` : ''
+  return `${title}${buildDescription(step)}`
+}
 
 export default function TestCasesPage() {
   const [projects, setProjects] = useState([])
-  const [testcases, setTestcases] = useState([])
-  const [filters, setFilters] = useState({ projectId: '', category: '', tag: '' })
   const [form, setForm] = useState({
     project: '',
     title: '',
+    module: '',
+    scenario: '',
     description: '',
-    steps: '',
-    expected_result: '',
     category: '',
     tags: '',
-    test_type: 'functional',
-    pytest_target: '',
     priority: 'medium',
     status: 'draft',
   })
+  const [steps, setSteps] = useState([createEmptyStep()])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [modal, setModal] = useState({
-    open: false,
-    mode: null,
-    testcase: null,
-    values: {
-      title: '',
-      category: '',
-      priority: 'medium',
-      status: 'draft',
-      pytest_target: '',
-    },
-  })
-
-  const filterQuery = useMemo(() => {
-    const params = new URLSearchParams()
-    if (filters.projectId) params.set('project_id', filters.projectId)
-    if (filters.category) params.set('category', filters.category)
-    if (filters.tag) params.set('tag', filters.tag)
-    const query = params.toString()
-    return query ? `?${query}` : ''
-  }, [filters])
+  const [pickerStepIndex, setPickerStepIndex] = useState(null)
 
   const loadProjects = useCallback(async () => {
     const data = await api.get('/api/projects/')
     setProjects(data || [])
   }, [])
 
-  const loadTestcases = useCallback(async () => {
-    const data = await api.get(`/api/testcases/${filterQuery}`)
-    setTestcases(data || [])
-  }, [filterQuery])
-
   useEffect(() => {
     ;(async () => {
       try {
         setError('')
-        await Promise.all([loadProjects(), loadTestcases()])
+        await loadProjects()
       } catch (err) {
-        setError(err.message || 'Failed to load test cases')
+        setError(err.message || 'Failed to load projects')
       }
     })()
-  }, [loadProjects, loadTestcases])
+  }, [loadProjects])
 
-  useEffect(() => {
-    ;(async () => {
-      try {
-        setError('')
-        await loadTestcases()
-      } catch (err) {
-        setError(err.message || 'Failed to filter test cases')
-      }
-    })()
-  }, [loadTestcases])
+  const previewTitle = useMemo(() => {
+    if (form.title.trim()) return form.title.trim()
+    if (form.module.trim() && form.scenario.trim()) return `${form.module.trim()} - ${form.scenario.trim()}`
+    if (form.scenario.trim()) return form.scenario.trim()
+    return 'Untitled Test Case'
+  }, [form.title, form.module, form.scenario])
+
+  const suggestedPreviewUrl = useMemo(
+    () => steps.find((step) => step.action === 'open_page' && step.value.trim())?.value.trim() || '',
+    [steps],
+  )
+  const suggestedPickerBrowser = useMemo(
+    () => steps.find((step) => step.action === 'launch_browser' && step.value.trim())?.value.trim() || 'chromium',
+    [steps],
+  )
+
+  const updateStep = (index, key, value) => {
+    setSteps((prev) => prev.map((step, stepIndex) => (stepIndex === index ? { ...step, [key]: value } : step)))
+  }
+
+  const addStep = () => setSteps((prev) => [...prev, createEmptyStep()])
+
+  const removeStep = (index) => {
+    setSteps((prev) => {
+      if (prev.length === 1) return prev
+      return prev.filter((_, stepIndex) => stepIndex !== index)
+    })
+  }
+
+  const moveStep = (index, direction) => {
+    setSteps((prev) => {
+      const nextIndex = index + direction
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev
+      const next = [...prev]
+      const [step] = next.splice(index, 1)
+      next.splice(nextIndex, 0, step)
+      return next
+    })
+  }
 
   const onCreate = async (event) => {
     event.preventDefault()
@@ -92,101 +150,25 @@ export default function TestCasesPage() {
           .split(',')
           .map((item) => item.trim())
           .filter(Boolean),
-      }
-      if (payload.test_type !== 'functional') {
-        payload.pytest_target = ''
+        steps_json: normalizeSteps(steps),
       }
       await api.post('/api/testcases/', payload)
       setMessage('Test case created.')
-      setForm((prev) => ({
-        ...prev,
+      setForm({
+        project: form.project,
         title: '',
+        module: '',
+        scenario: '',
         description: '',
-        steps: '',
-        expected_result: '',
         category: '',
         tags: '',
-        pytest_target: '',
-      }))
-      await loadTestcases()
+        priority: 'medium',
+        status: 'draft',
+      })
+      setSteps([createEmptyStep()])
+      setPickerStepIndex(null)
     } catch (err) {
       setError(err.message || 'Create test case failed')
-    }
-  }
-
-  const openEditModal = (item) => {
-    setModal({
-      open: true,
-      mode: 'edit',
-      testcase: item,
-      values: {
-        title: item.title || '',
-        category: item.category || '',
-        priority: item.priority || 'medium',
-        status: item.status || 'draft',
-        pytest_target: item.pytest_target || '',
-      },
-    })
-  }
-
-  const openDeleteModal = (item) => {
-    setModal({
-      open: true,
-      mode: 'delete',
-      testcase: item,
-      values: {
-        title: '',
-        category: '',
-        priority: 'medium',
-        status: 'draft',
-        pytest_target: '',
-      },
-    })
-  }
-
-  const closeModal = () => {
-    setModal({
-      open: false,
-      mode: null,
-      testcase: null,
-      values: {
-        title: '',
-        category: '',
-        priority: 'medium',
-        status: 'draft',
-        pytest_target: '',
-      },
-    })
-  }
-
-  const onModalFieldChange = (key, value) => {
-    setModal((prev) => ({ ...prev, values: { ...prev.values, [key]: value } }))
-  }
-
-  const onModalConfirm = async () => {
-    if (!modal.testcase) return
-
-    setError('')
-    setMessage('')
-    try {
-      if (modal.mode === 'edit') {
-        const payload = {
-          title: modal.values.title,
-          category: modal.values.category,
-          priority: modal.values.priority,
-          status: modal.values.status,
-          pytest_target: modal.values.pytest_target,
-        }
-        await api.patch(`/api/testcases/${modal.testcase.id}/`, payload)
-        setMessage('Test case updated.')
-      } else {
-        await api.del(`/api/testcases/${modal.testcase.id}/`)
-        setMessage('Test case deleted.')
-      }
-      closeModal()
-      await loadTestcases()
-    } catch (err) {
-      setError(err.message || 'Test case action failed')
     }
   }
 
@@ -194,34 +176,10 @@ export default function TestCasesPage() {
     <div className="stack-lg">
       <section className="card reveal">
         <div className="card-header">
-          <h2>Test Cases</h2>
-          <p className="muted-text">Compose and classify test definitions for execution.</p>
+          <h2>Create Test Case</h2>
+          <p className="muted-text">Author a new automated test case with the smallest useful set of inputs.</p>
         </div>
 
-        <div className="inline-form">
-          <select value={filters.projectId} onChange={(event) => setFilters((prev) => ({ ...prev, projectId: event.target.value }))}>
-            <option value="">All projects</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <input
-            placeholder="Category filter"
-            value={filters.category}
-            onChange={(event) => setFilters((prev) => ({ ...prev, category: event.target.value }))}
-          />
-          <input
-            placeholder="Tag filter"
-            value={filters.tag}
-            onChange={(event) => setFilters((prev) => ({ ...prev, tag: event.target.value }))}
-          />
-        </div>
-      </section>
-
-      <section className="card reveal">
-        <h3>Create Test Case</h3>
         <form className="form-grid two-col" onSubmit={onCreate}>
           <label className="field">
             Project
@@ -240,10 +198,20 @@ export default function TestCasesPage() {
           </label>
           <label className="field">
             Title
+            <input value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} />
+          </label>
+          <label className="field">
+            Module
             <input
-              value={form.title}
-              onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
-              required
+              value={form.module}
+              onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))}
+            />
+          </label>
+          <label className="field">
+            Scenario
+            <input
+              value={form.scenario}
+              onChange={(event) => setForm((prev) => ({ ...prev, scenario: event.target.value }))}
             />
           </label>
           <label className="field">
@@ -255,23 +223,7 @@ export default function TestCasesPage() {
           </label>
           <label className="field">
             Tags (comma separated)
-            <input
-              value={form.tags}
-              onChange={(event) => setForm((prev) => ({ ...prev, tags: event.target.value }))}
-            />
-          </label>
-          <label className="field">
-            Test Type
-            <select
-              value={form.test_type}
-              onChange={(event) => setForm((prev) => ({ ...prev, test_type: event.target.value }))}
-            >
-              {testTypes.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+            <input value={form.tags} onChange={(event) => setForm((prev) => ({ ...prev, tags: event.target.value }))} />
           </label>
           <label className="field">
             Priority
@@ -288,10 +240,7 @@ export default function TestCasesPage() {
           </label>
           <label className="field">
             Status
-            <select
-              value={form.status}
-              onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
-            >
+            <select value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}>
               {statuses.map((item) => (
                 <option key={item} value={item}>
                   {item}
@@ -299,32 +248,181 @@ export default function TestCasesPage() {
               ))}
             </select>
           </label>
-          <label className="field">
-            Pytest target
-            <input
-              value={form.pytest_target}
-              onChange={(event) => setForm((prev) => ({ ...prev, pytest_target: event.target.value }))}
-              placeholder="required for functional test type"
-            />
-          </label>
           <label className="field full">
             Description
             <textarea
               value={form.description}
               onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+              placeholder="Add setup notes, scope, or supporting details."
             />
           </label>
-          <label className="field full">
-            Steps
-            <textarea value={form.steps} onChange={(event) => setForm((prev) => ({ ...prev, steps: event.target.value }))} />
-          </label>
-          <label className="field full">
-            Expected Result
-            <textarea
-              value={form.expected_result}
-              onChange={(event) => setForm((prev) => ({ ...prev, expected_result: event.target.value }))}
+
+          <div className="field full">
+            <div className="card-header">
+              <div>
+                <h4>Step Builder</h4>
+                <p className="muted-text">Focus on step name, action, and value. Add automation details only when needed.</p>
+              </div>
+            </div>
+
+            <div className="stack-md">
+              {steps.map((step, index) => {
+                const isLastStep = index === steps.length - 1
+                const actionNeedsTarget = !['launch_browser', 'press_key'].includes(step.action)
+
+                return (
+                  <div key={index} className="card">
+                    <div className="card-header">
+                      <strong>Step {index + 1}</strong>
+                      <div className="inline-form">
+                        <button className="button ghost" type="button" onClick={() => moveStep(index, -1)}>
+                          Up
+                        </button>
+                        <button className="button ghost" type="button" onClick={() => moveStep(index, 1)}>
+                          Down
+                        </button>
+                        <button className="button danger" type="button" onClick={() => removeStep(index)}>
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="form-grid two-col">
+                      <label className="field">
+                        Step Title
+                        <input
+                          value={step.step_title}
+                          onChange={(event) => updateStep(index, 'step_title', event.target.value)}
+                          placeholder="Enter keyword"
+                          required
+                        />
+                      </label>
+                      <label className="field">
+                        Action
+                        <select value={step.action} onChange={(event) => updateStep(index, 'action', event.target.value)} required>
+                          <option value="">Select action</option>
+                          {stepActions.map((item) => (
+                            <option key={item.value} value={item.value}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        Value
+                        <input
+                          value={step.value}
+                          onChange={(event) => updateStep(index, 'value', event.target.value)}
+                          placeholder={
+                            step.action === 'launch_browser'
+                              ? 'chromium, chrome, firefox, safari'
+                              : step.action === 'open_page'
+                                ? 'https://example.com'
+                                : step.action === 'input_text'
+                                  ? 'Text to type'
+                                  : step.action === 'press_key'
+                                    ? 'Enter'
+                                    : ''
+                          }
+                        />
+                      </label>
+                      {actionNeedsTarget ? (
+                        <div className="field full">
+                          <div className="inline-form">
+                            <span className="muted-text">Use the button below or the picker panel to capture a target and selector from a real browser window.</span>
+                          </div>
+                        </div>
+                      ) : null}
+                      <details className="field full">
+                        <summary>Advanced Automation Details</summary>
+                        <div className="form-grid two-col">
+                          {actionNeedsTarget ? (
+                            <>
+                              <label className="field">
+                                Picked Target
+                                <input
+                                  value={step.target}
+                                  onChange={(event) => updateStep(index, 'target', event.target.value)}
+                                  placeholder="Element name users can understand"
+                                />
+                              </label>
+                              <label className="field">
+                                CSS Selector
+                                <input
+                                  value={step.selector}
+                                  onChange={(event) => updateStep(index, 'selector', event.target.value)}
+                                  placeholder={step.action === 'open_page' ? 'Optional for open_page' : 'Temporary manual fallback until picker is ready'}
+                                />
+                              </label>
+                              <label className="field">
+                                Note
+                                <input value={step.note} onChange={(event) => updateStep(index, 'note', event.target.value)} />
+                              </label>
+                            </>
+                          ) : (
+                            <p className="muted-text">No extra automation fields are required for this action.</p>
+                          )}
+                        </div>
+                      </details>
+                    </div>
+
+                        {isLastStep ? (
+                          <div className="inline-form" style={{ justifyContent: 'flex-end' }}>
+                            <button className="button ghost" type="button" onClick={addStep}>
+                              Add Step
+                            </button>
+                          </div>
+                        ) : null}
+                        {actionNeedsTarget ? (
+                          <div className="inline-form" style={{ justifyContent: 'flex-start' }}>
+                            <button className="button ghost" type="button" onClick={() => setPickerStepIndex(index)}>
+                              Pick Element For This Step
+                            </button>
+                          </div>
+                        ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="field full">
+            <ElementPickerPanel
+              activeStepIndex={pickerStepIndex}
+              activeStepTitle={pickerStepIndex !== null ? steps[pickerStepIndex]?.step_title : ''}
+              suggestedUrl={suggestedPreviewUrl}
+              suggestedBrowser={suggestedPickerBrowser}
+              onPick={({ target, selector }) => {
+                if (pickerStepIndex === null) return
+                setSteps((prev) =>
+                  prev.map((step, index) =>
+                    index === pickerStepIndex
+                      ? { ...step, target, selector }
+                      : step,
+                  ),
+                )
+              }}
             />
-          </label>
+          </div>
+
+          <div className="field full">
+            <h4>Preview</h4>
+            <p className="muted-text">Title: {previewTitle}</p>
+            <div className="stack-sm">
+              {normalizeSteps(steps).map((step) => (
+                <article key={step.step_no} className="card">
+                  <strong>
+                    Step {step.step_no}: {step.step_title || 'Untitled step'}
+                  </strong>
+                  <p>{formatStep(step)}</p>
+                  <p className="muted-text">Action: {stepActions.find((item) => item.value === step.action)?.label || step.action || '-'}</p>
+                  {['launch_browser', 'press_key'].includes(step.action) ? null : <p className="muted-text">Target: {step.target || step.step_title || '-'}</p>}
+                  {step.value ? <p className="muted-text">Value: {step.value}</p> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+
           {message ? <p className="success-text full">{message}</p> : null}
           {error ? <p className="error-text full">{error}</p> : null}
           <button className="button primary full" type="submit">
@@ -332,86 +430,6 @@ export default function TestCasesPage() {
           </button>
         </form>
       </section>
-
-      <section className="card reveal">
-        <h3>Visible Test Cases</h3>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Pytest target</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {testcases.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="muted-cell">
-                    No test cases found.
-                  </td>
-                </tr>
-              ) : (
-                testcases.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.project}</td>
-                    <td>{item.title}</td>
-                    <td>{item.test_type}</td>
-                    <td>{item.priority}</td>
-                    <td>{item.status}</td>
-                    <td className="truncate">{item.pytest_target || '-'}</td>
-                    <td>
-                      <div className="inline-form">
-                        <button className="button ghost" type="button" onClick={() => openEditModal(item)}>
-                          Edit
-                        </button>
-                        <button className="button danger" type="button" onClick={() => openDeleteModal(item)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <ActionModal
-        open={modal.open}
-        title={
-          modal.mode === 'edit'
-            ? 'Edit Test Case'
-            : 'Delete Test Case'
-        }
-        description={
-          modal.mode === 'edit'
-            ? 'Update test case fields.'
-            : `This will permanently delete "${modal.testcase?.title || ''}".`
-        }
-        fields={
-          modal.mode === 'edit'
-            ? [
-                { key: 'title', label: 'Title' },
-                { key: 'category', label: 'Category' },
-                { key: 'priority', label: 'Priority', type: 'select', options: priorities },
-                { key: 'status', label: 'Status', type: 'select', options: statuses },
-                { key: 'pytest_target', label: 'Pytest target' },
-              ]
-            : []
-        }
-        values={modal.values}
-        onChange={onModalFieldChange}
-        onCancel={closeModal}
-        onConfirm={onModalConfirm}
-        confirmText={modal.mode === 'edit' ? 'Save' : 'Delete'}
-        danger={modal.mode === 'delete'}
-      />
     </div>
   )
 }

@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import ActionModal from '../components/ActionModal'
 import StatusPill from '../components/StatusPill'
 import { api } from '../lib/api'
+import { getAccessToken } from '../lib/authStorage'
+
+function toProjectWebSocketUrl(projectId, token) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  return `${protocol}//${host}/ws/projects/${projectId}/executions/?token=${encodeURIComponent(token)}`
+}
 
 export default function ExecutionsPage() {
+  const navigate = useNavigate()
   const [projects, setProjects] = useState([])
   const [testcases, setTestcases] = useState([])
   const [executions, setExecutions] = useState([])
@@ -15,6 +23,8 @@ export default function ExecutionsPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const socketRefs = useRef({})
+  const reconnectRefs = useRef({})
 
   const filteredTestcases = useMemo(() => testcases, [testcases])
 
@@ -65,18 +75,94 @@ export default function ExecutionsPage() {
     })()
   }, [projectId])
 
+  useEffect(() => {
+    const token = getAccessToken()
+    if (!token || projects.length === 0) return undefined
+
+    const sockets = socketRefs.current
+    const reconnects = reconnectRefs.current
+    const activeProjectIds = new Set(projects.map((project) => String(project.id)))
+
+    const cleanupProjectSocket = (currentProjectId) => {
+      const existing = sockets[currentProjectId]
+      if (existing) {
+        existing.__closedManually = true
+        existing.close()
+        delete sockets[currentProjectId]
+      }
+      if (reconnects[currentProjectId]) {
+        window.clearTimeout(reconnects[currentProjectId])
+        delete reconnects[currentProjectId]
+      }
+    }
+
+    const upsertExecution = (incoming) => {
+      setExecutions((prev) => {
+        const idx = prev.findIndex((item) => item.id === incoming.id)
+        if (idx === -1) return [incoming, ...prev]
+        const next = [...prev]
+        next[idx] = { ...next[idx], ...incoming }
+        return next
+      })
+    }
+
+    const connectProjectSocket = (currentProjectId) => {
+      const socket = new WebSocket(toProjectWebSocketUrl(currentProjectId, token))
+      socket.__closedManually = false
+      sockets[currentProjectId] = socket
+
+      socket.onclose = () => {
+        if (socket.__closedManually) return
+        reconnects[currentProjectId] = window.setTimeout(() => {
+          connectProjectSocket(currentProjectId)
+        }, 1500)
+      }
+
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data)
+          if (payload.execution) {
+            upsertExecution(payload.execution)
+          }
+        } catch {
+          // Ignore malformed websocket payloads.
+        }
+      }
+    }
+
+    projects.forEach((project) => {
+      const currentProjectId = String(project.id)
+      if (!sockets[currentProjectId]) {
+        connectProjectSocket(currentProjectId)
+      }
+    })
+
+    Object.keys(sockets).forEach((currentProjectId) => {
+      if (!activeProjectIds.has(currentProjectId)) {
+        cleanupProjectSocket(currentProjectId)
+      }
+    })
+
+    return () => {
+      Object.keys(sockets).forEach((currentProjectId) => {
+        cleanupProjectSocket(currentProjectId)
+      })
+    }
+  }, [projects])
+
   const runExecution = async (event) => {
     event.preventDefault()
     setError('')
     setMessage('')
     try {
-      await api.post('/api/executions/run/', {
+      const execution = await api.post('/api/executions/run/', {
         project: Number(projectId),
         testcase: Number(testcaseId),
       })
-      setMessage('Execution created.')
+      setMessage('Execution started.')
       await loadData()
       await loadTestcasesForProject(projectId)
+      navigate(`/executions/${execution.id}`)
     } catch (err) {
       setError(err.message || 'Execution request failed')
     }
@@ -104,7 +190,7 @@ export default function ExecutionsPage() {
       <section className="card reveal">
         <div className="card-header">
           <h2>Execution Center</h2>
-          <p className="muted-text">Trigger runs and manage execution history from one place.</p>
+          <p className="muted-text">Start automated browser runs and track each structured test execution.</p>
         </div>
 
         <form className="inline-form" onSubmit={runExecution}>
@@ -147,7 +233,8 @@ export default function ExecutionsPage() {
                 <th>Project</th>
                 <th>Test Case</th>
                 <th>Status</th>
-                <th>Exit</th>
+                <th>Current Step</th>
+                <th>Failed Step</th>
                 <th>Summary</th>
                 <th>Actions</th>
               </tr>
@@ -155,7 +242,7 @@ export default function ExecutionsPage() {
             <tbody>
               {executions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="muted-cell">
+                  <td colSpan={7} className="muted-cell">
                     No executions yet.
                   </td>
                 </tr>
@@ -167,8 +254,13 @@ export default function ExecutionsPage() {
                     <td>
                       <StatusPill status={execution.status} />
                     </td>
-                    <td>{execution.exit_code ?? '-'}</td>
-                    <td className="truncate">{execution.result_summary || '-'}</td>
+                    <td>{execution.current_step_no ?? '-'}</td>
+                    <td>{execution.failed_step_no ?? '-'}</td>
+                    <td className="summary-cell">
+                      <span className="truncate-text" title={execution.failure_reason || execution.result_summary || '-'}>
+                        {execution.failure_reason || execution.result_summary || '-'}
+                      </span>
+                    </td>
                     <td className="action-row">
                       <Link className="inline-link" to={`/executions/${execution.id}`}>
                         Detail
