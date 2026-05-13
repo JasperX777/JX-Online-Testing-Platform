@@ -16,7 +16,7 @@ from .serializers import (
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
-from .services import initialize_execution
+from .services import cleanup_execution_media, initialize_execution
 from .tasks import dispatch_test_execution
 
 
@@ -94,6 +94,10 @@ class TestExecutionViewSet(
             qs = qs.filter(testcase_id=testcase_id)
 
         return qs
+
+    def perform_destroy(self, instance):
+        cleanup_execution_media(execution=instance)
+        instance.delete()
 
     @action(detail=True, methods=['get'], url_path='report')
     def report(self, request, pk=None):

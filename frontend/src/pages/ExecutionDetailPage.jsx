@@ -45,6 +45,7 @@ export default function ExecutionDetailPage() {
   const reportData = report?.report_data || null
   const reportSummary = reportData?.summary || null
   const reportExecution = reportData?.execution || null
+  const executionVideoUrl = execution?.video_url || reportExecution?.video_url || ''
 
   useEffect(() => {
     let canceled = false
@@ -284,6 +285,29 @@ export default function ExecutionDetailPage() {
           </div>
         ) : (
           <p className="muted-text">Report is not generated yet.</p>
+        )}
+      </section>
+
+      <section className="card reveal">
+        <div className="card-header">
+          <div>
+            <h3>Execution Recording</h3>
+            <p className="muted-text">Watch the browser run that produced this result.</p>
+          </div>
+        </div>
+        {executionVideoUrl ? (
+          <div className="stack-sm">
+            <div className="execution-video-frame">
+              <video key={executionVideoUrl} controls preload="metadata" src={executionVideoUrl}>
+                Your browser does not support embedded video playback.
+              </video>
+            </div>
+            <a className="inline-link" href={executionVideoUrl} target="_blank" rel="noreferrer">
+              Open recording
+            </a>
+          </div>
+        ) : (
+          <p className="muted-text">Recording will appear here after the automated run finishes.</p>
         )}
       </section>
     </div>

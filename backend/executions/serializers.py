@@ -44,6 +44,7 @@ class TestExecutionSerializer(serializers.ModelSerializer):
     triggered_by_username = serializers.CharField(source='triggered_by.username', read_only=True)
     report = ExecutionReportSerializer(read_only=True)
     step_results = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
 
     class Meta:
         model = TestExecution
@@ -62,6 +63,8 @@ class TestExecutionSerializer(serializers.ModelSerializer):
             'failure_reason',
             'failed_step_no',
             'current_step_no',
+            'video_path',
+            'video_url',
             'started_at',
             'finished_at',
             'created_at',
@@ -72,6 +75,9 @@ class TestExecutionSerializer(serializers.ModelSerializer):
 
     def get_step_results(self, obj):
         return ExecutionStepResultSerializer(obj.step_results.all(), many=True).data
+
+    def get_video_url(self, obj):
+        return _to_media_url(obj.video_path)
 
 
 class ExecutionStepResultSerializer(serializers.ModelSerializer):
@@ -101,13 +107,17 @@ class ExecutionStepResultSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_screenshot_url(self, obj):
-        if not obj.screenshot_path:
-            return ''
-        media_root = str(settings.MEDIA_ROOT)
-        if obj.screenshot_path.startswith(media_root):
-            relative_path = obj.screenshot_path[len(media_root):].lstrip('/\\')
-            return f"{settings.MEDIA_URL}{relative_path.replace('\\', '/')}"
-        return obj.screenshot_path
+        return _to_media_url(obj.screenshot_path)
+
+
+def _to_media_url(path):
+    if not path:
+        return ''
+    media_root = str(settings.MEDIA_ROOT)
+    if path.startswith(media_root):
+        relative_path = path[len(media_root):].lstrip('/\\')
+        return f"{settings.MEDIA_URL}{relative_path.replace('\\', '/')}"
+    return path
 
 
 class TestExecutionRunSerializer(serializers.Serializer):

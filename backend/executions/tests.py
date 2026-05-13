@@ -1,4 +1,6 @@
 from unittest.mock import patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -151,13 +153,13 @@ class TestExecutionServiceTests(TestCase):
 
     @patch('executions.services.execute_steps')
     def test_run_execution_marks_success_when_automation_passes(self, execute_steps_mock):
-        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
-            for step_result in step_results:
-                on_step_start(step_result)
-                on_step_pass(step_result)
-            return None
-
-        execute_steps_mock.side_effect = fake_execute_steps
+        execute_steps_mock.return_value = {
+            'video_path': '/tmp/execution.webm',
+            'outcomes': [
+                {'step_no': step['step_no'], 'status': 'passed', 'error_message': '', 'screenshot_path': ''}
+                for step in sample_steps()
+            ],
+        }
 
         execution = TestExecution.objects.create(
             project=self.project,
@@ -172,19 +174,19 @@ class TestExecutionServiceTests(TestCase):
 
         self.assertEqual(execution.status, TestExecution.Status.SUCCESS)
         self.assertIsNone(execution.current_step_no)
+        self.assertEqual(execution.video_path, '/tmp/execution.webm')
         self.assertEqual(execution.step_results.filter(status=ExecutionStepResult.Status.PASSED).count(), 5)
         self.assertTrue(ExecutionReport.objects.filter(execution=execution).exists())
 
     @patch('executions.services.execute_steps')
-    def test_run_execution_records_failure_and_screenshot(self, execute_steps_mock):
-        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
-            on_step_start(step_results[2])
-            on_step_pass(step_results[2])
-            on_step_start(step_results[3])
-            on_step_fail(step_results[3], 'Input did not appear', '/tmp/failure.png')
-            return 'Input did not appear'
-
-        execute_steps_mock.side_effect = fake_execute_steps
+    def test_run_execution_records_failure_and_video(self, execute_steps_mock):
+        execute_steps_mock.return_value = {
+            'video_path': '/tmp/execution.webm',
+            'outcomes': [
+                {'step_no': 3, 'status': 'passed', 'error_message': '', 'screenshot_path': ''},
+                {'step_no': 4, 'status': 'failed', 'error_message': 'Input did not appear', 'screenshot_path': ''},
+            ],
+        }
 
         execution = TestExecution.objects.create(
             project=self.project,
@@ -200,18 +202,19 @@ class TestExecutionServiceTests(TestCase):
         failed_step = execution.step_results.get(step_no=4)
         self.assertEqual(execution.status, TestExecution.Status.FAILED)
         self.assertEqual(execution.failed_step_no, 4)
+        self.assertEqual(execution.video_path, '/tmp/execution.webm')
         self.assertEqual(failed_step.error_message, 'Input did not appear')
-        self.assertEqual(failed_step.screenshot_path, '/tmp/failure.png')
+        self.assertEqual(failed_step.screenshot_path, '')
         self.assertEqual(execution.step_results.get(step_no=5).status, ExecutionStepResult.Status.PENDING)
 
     @patch('executions.services.execute_steps')
-    def test_store_execution_report_contains_selector_and_screenshot(self, execute_steps_mock):
-        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
-            on_step_start(step_results[0])
-            on_step_fail(step_results[0], 'Dependency missing', '/tmp/missing.png')
-            return 'Dependency missing'
-
-        execute_steps_mock.side_effect = fake_execute_steps
+    def test_store_execution_report_contains_selector_and_video(self, execute_steps_mock):
+        execute_steps_mock.return_value = {
+            'video_path': '/tmp/missing.webm',
+            'outcomes': [
+                {'step_no': 1, 'status': 'failed', 'error_message': 'Dependency missing', 'screenshot_path': ''},
+            ],
+        }
 
         execution = TestExecution.objects.create(
             project=self.project,
@@ -226,9 +229,10 @@ class TestExecutionServiceTests(TestCase):
         report = store_execution_report(execution=execution)
 
         self.assertEqual(report.report_data['summary']['failed_steps'], 1)
+        self.assertEqual(report.report_data['execution']['video_path'], '/tmp/missing.webm')
         self.assertEqual(report.report_data['steps'][0]['step_title'], 'Launch browser')
         self.assertEqual(report.report_data['steps'][0]['selector'], '')
-        self.assertEqual(report.report_data['steps'][0]['screenshot_path'], '/tmp/missing.png')
+        self.assertEqual(report.report_data['steps'][0]['screenshot_path'], '')
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
@@ -307,6 +311,45 @@ class TestExecutionApiTests(APITestCase):
         self.assertEqual(TestExecution.objects.filter(testcase=self.tc).count(), 2)
         self.assertEqual(dispatch_mock.call_count, 2)
 
+    def test_delete_execution_removes_media_files(self):
+        with TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            video_dir = media_root / 'execution_videos' / 'execution_99'
+            screenshot_dir = media_root / 'execution_screenshots'
+            video_dir.mkdir(parents=True)
+            screenshot_dir.mkdir(parents=True)
+            video_path = video_dir / 'run.webm'
+            screenshot_path = screenshot_dir / 'failure.png'
+            video_path.write_bytes(b'video')
+            screenshot_path.write_bytes(b'image')
+
+            with override_settings(
+                MEDIA_ROOT=media_root,
+                EXECUTION_VIDEO_DIR=media_root / 'execution_videos',
+                EXECUTION_SCREENSHOT_DIR=screenshot_dir,
+            ):
+                execution = TestExecution.objects.create(
+                    project=self.project,
+                    testcase=self.tc,
+                    triggered_by=self.user,
+                    status=TestExecution.Status.SUCCESS,
+                    video_path=str(video_path),
+                )
+                initialize_execution(execution=execution)
+                execution.video_path = str(video_path)
+                execution.save(update_fields=['video_path'])
+                step = execution.step_results.first()
+                step.screenshot_path = str(screenshot_path)
+                step.save(update_fields=['screenshot_path'])
+
+                self.auth()
+                resp = self.client.delete(f'/api/executions/{execution.id}/')
+
+                self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+                self.assertFalse(video_path.exists())
+                self.assertFalse(video_dir.exists())
+                self.assertFalse(screenshot_path.exists())
+
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
 class ExecutionRealtimeTests(TransactionTestCase):
@@ -336,12 +379,12 @@ class ExecutionRealtimeTests(TransactionTestCase):
 
     @patch('executions.services.execute_steps')
     def test_execution_socket_receives_updates(self, execute_steps_mock):
-        def fake_execute_steps(*, execution, step_results, on_step_start, on_step_pass, on_step_fail):
-            on_step_start(step_results[0])
-            on_step_pass(step_results[0])
-            return None
-
-        execute_steps_mock.side_effect = fake_execute_steps
+        execute_steps_mock.return_value = {
+            'video_path': '/tmp/ws.webm',
+            'outcomes': [
+                {'step_no': 1, 'status': 'passed', 'error_message': '', 'screenshot_path': ''},
+            ],
+        }
 
         async def runner():
             refresh = RefreshToken.for_user(self.user)

@@ -475,6 +475,21 @@ th {
   color: #000;
 }
 
+.execution-video-frame {
+  width: min(520px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #05080d;
+}
+
+.execution-video-frame video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: #05080d;
+}
+
 .log-feed {
   display: grid;
   gap: 8px;

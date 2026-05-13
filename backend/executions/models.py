@@ -40,6 +40,7 @@ class TestExecution(models.Model):
     failure_reason = models.TextField(blank=True)
     failed_step_no = models.IntegerField(null=True, blank=True)
     current_step_no = models.IntegerField(null=True, blank=True)
+    video_path = models.CharField(max_length=500, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,3 +1,7 @@
+import shutil
+from pathlib import Path
+
+from django.conf import settings
 from django.utils import timezone
 
 from .automation import AutomationDependencyError, execute_steps
@@ -8,6 +12,50 @@ from .reports import store_execution_report
 
 def _serialize_execution_update(execution: TestExecution):
     return TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').prefetch_related('step_results').get(id=execution.id)
+
+
+def cleanup_execution_media(*, execution: TestExecution):
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    paths_to_delete = []
+    directories_to_delete = []
+
+    if execution.video_path:
+        video_path = Path(execution.video_path)
+        paths_to_delete.append(video_path)
+        directories_to_delete.append(video_path.parent)
+
+    video_dir = Path(settings.EXECUTION_VIDEO_DIR) / f'execution_{execution.id}'
+    directories_to_delete.append(video_dir)
+
+    for step_result in execution.step_results.all():
+        if step_result.screenshot_path:
+            paths_to_delete.append(Path(step_result.screenshot_path))
+
+    for path in paths_to_delete:
+        try:
+            resolved_path = path.resolve()
+        except FileNotFoundError:
+            continue
+
+        if media_root not in resolved_path.parents and resolved_path != media_root:
+            continue
+
+        if resolved_path.is_dir():
+            shutil.rmtree(resolved_path, ignore_errors=True)
+        elif resolved_path.exists():
+            resolved_path.unlink()
+
+    for path in directories_to_delete:
+        try:
+            resolved_path = path.resolve()
+        except FileNotFoundError:
+            continue
+
+        if media_root not in resolved_path.parents and resolved_path != media_root:
+            continue
+
+        if resolved_path.is_dir():
+            shutil.rmtree(resolved_path, ignore_errors=True)
 
 
 def _write_execution_log(*, execution: TestExecution, level: str, message: str):
@@ -49,6 +97,7 @@ def initialize_execution(*, execution: TestExecution):
     execution.current_step_no = 1 if step_results else None
     execution.started_at = None
     execution.finished_at = None
+    execution.video_path = ''
     execution.result_summary = ''
     execution.failure_reason = ''
     execution.failed_step_no = None
@@ -58,6 +107,7 @@ def initialize_execution(*, execution: TestExecution):
             'current_step_no',
             'started_at',
             'finished_at',
+            'video_path',
             'result_summary',
             'failure_reason',
             'failed_step_no',
@@ -176,7 +226,7 @@ def run_test_execution(*, execution: TestExecution):
     broadcast_execution_event(event='execution.started', execution=_serialize_execution_update(execution))
 
     try:
-        outcomes = execute_steps(execution=execution, step_results=step_results)
+        automation_result = execute_steps(execution=execution, step_results=step_results)
     except AutomationDependencyError as exc:
         _mark_step_failed(
             execution=execution,
@@ -185,6 +235,13 @@ def run_test_execution(*, execution: TestExecution):
             screenshot_path='',
         )
         return _serialize_execution_update(execution)
+
+    if isinstance(automation_result, dict):
+        outcomes = automation_result.get('outcomes', [])
+        execution.video_path = automation_result.get('video_path', '') or ''
+        execution.save(update_fields=['video_path'])
+    else:
+        outcomes = automation_result
 
     step_results_by_no = {step_result.step_no: step_result for step_result in step_results}
     for outcome in outcomes:

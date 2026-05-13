@@ -32,6 +32,8 @@ def build_execution_report(*, execution: TestExecution) -> dict:
             'failure_reason': execution.failure_reason,
             'failed_step_no': execution.failed_step_no,
             'current_step_no': execution.current_step_no,
+            'video_path': execution.video_path,
+            'video_url': _to_media_url(execution.video_path),
             'started_at': execution.started_at.isoformat() if execution.started_at else None,
             'finished_at': execution.finished_at.isoformat() if execution.finished_at else None,
             'duration_seconds': duration_seconds,
