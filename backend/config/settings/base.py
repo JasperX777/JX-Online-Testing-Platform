@@ -16,11 +16,17 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
+def split_csv_env(name: str, default: str = '') -> list[str]:
+    value = os.getenv(name, default)
+    return [item.strip() for item in value.split(',') if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-insecure-key-change-me-at-least-32-chars')
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = split_csv_env('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost')
+CSRF_TRUSTED_ORIGINS = split_csv_env('DJANGO_CSRF_TRUSTED_ORIGINS')
 
 
 # Application definition
@@ -112,10 +118,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 EXECUTION_SCREENSHOT_DIR = MEDIA_ROOT / 'execution_screenshots'
+EXECUTION_VIDEO_DIR = MEDIA_ROOT / 'execution_videos'
 
 
 # DRF + JWT
@@ -146,3 +154,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True

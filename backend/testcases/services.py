@@ -1,3 +1,5 @@
+from django.db import connection
+
 from .models import TestCase
 
 
@@ -9,7 +11,11 @@ def filter_testcases(*, queryset, project_id=None, category=None, tag=None):
     if category:
         qs = qs.filter(category=category)
     if tag:
-        qs = qs.filter(tags__contains=[tag])
+        if connection.vendor == 'sqlite':
+            matching_ids = [obj.id for obj in qs if tag in (obj.tags or [])]
+            qs = qs.filter(id__in=matching_ids)
+        else:
+            qs = qs.filter(tags__contains=[tag])
 
     return qs
 

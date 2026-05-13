@@ -86,7 +86,7 @@ class TestCaseApiTests(APITestCase):
         obj = TestCase.objects.get(id=resp.data['id'])
         self.assertEqual(obj.created_by_id, self.user.id)
         self.assertEqual(obj.module, 'Auth')
-        self.assertEqual(obj.steps_json[0]['action'], 'open_page')
+        self.assertEqual(obj.steps_json[0]['action'], 'launch_browser')
 
     def test_create_testcase_generates_title_when_missing(self):
         self.auth()

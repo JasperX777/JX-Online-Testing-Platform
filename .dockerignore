@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+backend/.pytest_cache
+backend/.venv
+backend/__pycache__
+backend/media
+backend/staticfiles
+frontend/dist
+frontend/node_modules
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+README.md

@@ -1,16 +1,69 @@
-# React + Vite
+# Frontend Technical Documentation
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Stack
 
-Currently, two official plugins are available:
+- React 19
+- React Router 7
+- Vite 8
+- ESLint 9
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Responsibilities
 
-## React Compiler
+The frontend is responsible for:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- authentication flows and token-aware session handling
+- project, test case, and execution views
+- communication with backend REST endpoints through `/api`
+- live execution updates through `/ws`
 
-## Expanding the ESLint configuration
+## Directory Overview
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```text
+src/
+├── components/   # Shared UI components and layout shell
+├── contexts/     # Authentication context
+├── lib/          # API client and token storage
+└── pages/        # Route-level screens
+```
+
+## Runtime Model
+
+- In development, the app is served by Vite.
+- `vite.config.js` proxies `/api`, `/ws`, and `/media` to Django.
+- In production, the frontend is built into static assets and served by an Nginx container.
+- External traffic is routed through the top-level Nginx reverse proxy shared with the backend.
+
+## API Access Pattern
+
+[src/lib/api.js](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend/src/lib/api.js) provides a unified request layer that:
+
+- attaches the current JWT access token automatically
+- retries once after refreshing the access token on `401`
+- normalizes JSON and error handling
+
+Because production traffic is routed through one domain and one Nginx entrypoint, the frontend does not need a separate API base URL for deployment.
+
+## Build And Quality
+
+```bash
+cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend
+npm ci
+npm run lint
+npm run build
+```
+
+CI currently runs:
+
+- `npm run lint`
+- `npm run build`
+
+## Containerization
+
+- Build stage: `node:22-alpine`
+- Runtime stage: `nginx:1.27-alpine`
+- SPA refresh support: `try_files $uri $uri/ /index.html`
+
+## Follow-Up
+
+- The frontend currently has lint and build validation, but no unit test suite yet.
+- If you want stronger UI quality gates later, `Vitest` and `React Testing Library` would be the natural next step.
