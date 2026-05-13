@@ -1,9 +1,8 @@
-FROM python:3.12-slim AS base
+FROM mcr.microsoft.com/playwright/python:v1.54.0-noble AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -15,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
-RUN python -m playwright install --with-deps chromium
 
 COPY backend /app
 COPY docker/backend/entrypoint.sh /entrypoint.sh
