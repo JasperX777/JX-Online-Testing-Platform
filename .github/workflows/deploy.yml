@@ -85,13 +85,30 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != '' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check deployment secrets
+        id: deploy-config
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_SSH_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip deploy because secrets are missing
+        if: ${{ steps.deploy-config.outputs.configured != 'true' }}
+        run: echo "Deployment secrets are not configured; skipping remote deploy steps."
+
       - name: Copy deployment files to server
+        if: ${{ steps.deploy-config.outputs.configured == 'true' }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -104,7 +121,7 @@ jobs:
           strip_components: 0
 
       - name: Log in to GHCR on server
-        if: ${{ secrets.GHCR_USER != '' && secrets.GHCR_PAT != '' }}
+        if: ${{ steps.deploy-config.outputs.configured == 'true' && secrets.GHCR_USER != '' && secrets.GHCR_PAT != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -114,6 +131,7 @@ jobs:
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
 
       - name: Deploy updated stack
+        if: ${{ steps.deploy-config.outputs.configured == 'true' }}
         uses: appleboy/ssh-action@v1.0.3
         env:
           BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:sha-${{ github.sha }}
