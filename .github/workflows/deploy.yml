@@ -121,14 +121,21 @@ jobs:
           strip_components: 0
 
       - name: Log in to GHCR on server
-        if: ${{ steps.deploy-config.outputs.configured == 'true' && secrets.GHCR_USER != '' && secrets.GHCR_PAT != '' }}
+        if: ${{ steps.deploy-config.outputs.configured == 'true' }}
+        env:
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            if [ -n "$GHCR_USER" ] && [ -n "$GHCR_PAT" ]; then
+              echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            else
+              echo "GHCR credentials are not configured; skipping registry login."
+            fi
 
       - name: Deploy updated stack
         if: ${{ steps.deploy-config.outputs.configured == 'true' }}
