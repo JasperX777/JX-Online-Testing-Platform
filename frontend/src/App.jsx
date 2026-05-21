@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
+import AIAgentPage from './pages/AIAgentPage'
 import DashboardPage from './pages/DashboardPage'
 import ExecutionDetailPage from './pages/ExecutionDetailPage'
 import ExecutionsPage from './pages/ExecutionsPage'
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/testcases/create" element={<TestCasesPage />} />
           <Route path="/executions" element={<ExecutionsPage />} />
           <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
+          <Route path="/ai-agent" element={<AIAgentPage />} />
         </Route>
       </Route>
 

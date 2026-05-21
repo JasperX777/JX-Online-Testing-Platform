@@ -8,6 +8,7 @@ const links = [
   { to: '/testcases/create', label: 'Create Test Case', end: true },
   { to: '/testcases', label: 'Test Case List', end: true },
   { to: '/executions', label: 'Executions', end: false },
+  { to: '/ai-agent', label: 'AI Agent', end: true },
 ]
 
 export default function AppShell() {
