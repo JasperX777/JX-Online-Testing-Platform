@@ -339,7 +339,7 @@ export default function TestCaseListPage() {
                     <td>{item.status}</td>
                     <td>{item.steps_json?.length || 0}</td>
                     <td>
-                      <div className="inline-form">
+                      <div className="action-row">
                         <button className="button ghost" type="button" onClick={() => openEditModal(item)}>
                           Edit
                         </button>

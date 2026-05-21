@@ -261,17 +261,19 @@ export default function ExecutionsPage() {
                         {execution.failure_reason || execution.result_summary || '-'}
                       </span>
                     </td>
-                    <td className="action-row">
-                      <Link className="inline-link" to={`/executions/${execution.id}`}>
-                        Detail
-                      </Link>
-                      <button
-                        className="button danger"
-                        type="button"
-                        onClick={() => setDeleteTarget(execution)}
-                      >
-                        Delete
-                      </button>
+                    <td className="action-cell">
+                      <div className="action-row">
+                        <Link className="inline-link" to={`/executions/${execution.id}`}>
+                          Detail
+                        </Link>
+                        <button
+                          className="button danger"
+                          type="button"
+                          onClick={() => setDeleteTarget(execution)}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
