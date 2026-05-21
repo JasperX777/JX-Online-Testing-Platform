@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'projects',
     'testcases',
     'executions',
+    'aiagent',
 ]
 
 MIDDLEWARE = [
@@ -113,6 +114,8 @@ TIME_ZONE = 'Pacific/Auckland'
 USE_I18N = True
 
 USE_TZ = True
+
+AI_AGENT_TARGET_BASE_URL = os.getenv('AI_AGENT_TARGET_BASE_URL', 'http://localhost:5173').rstrip('/')
 
 
 # Static files (CSS, JavaScript, Images)

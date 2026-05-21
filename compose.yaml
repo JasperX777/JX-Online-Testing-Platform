@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -50,6 +52,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
       CHANNEL_REDIS_URL: ${CHANNEL_REDIS_URL}
+      AI_AGENT_TARGET_BASE_URL: ${AI_AGENT_TARGET_BASE_URL}
       RUN_MIGRATIONS: "1"
     depends_on:
       db:
@@ -84,6 +87,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
       CHANNEL_REDIS_URL: ${CHANNEL_REDIS_URL}
+      AI_AGENT_TARGET_BASE_URL: ${AI_AGENT_TARGET_BASE_URL}
     depends_on:
       db:
         condition: service_healthy

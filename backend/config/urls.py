@@ -46,6 +46,7 @@ urlpatterns = [
     path('api/', include('projects.urls')),
     path('api/', include('testcases.urls')),
     path('api/', include('executions.urls')),
+    path('api/', include('aiagent.urls')),
 
     # Public
     path('api/health/', HealthView.as_view(), name='health'),
