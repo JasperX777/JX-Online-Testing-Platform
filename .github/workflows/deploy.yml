@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE_NAME: ${{ github.repository_owner }}/jx-online-testing-platform-backend
-  FRONTEND_IMAGE_NAME: ${{ github.repository_owner }}/jx-online-testing-platform-frontend
+  BACKEND_IMAGE_NAME: jasperx777/jx-online-testing-platform-backend
+  FRONTEND_IMAGE_NAME: jasperx777/jx-online-testing-platform-frontend
 
 jobs:
   build-and-push:
