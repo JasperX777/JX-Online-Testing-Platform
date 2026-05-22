@@ -153,3 +153,4 @@ jobs:
             export FRONTEND_IMAGE="$FRONTEND_IMAGE"
             docker compose -f compose.prod.yaml pull backend frontend
             docker compose -f compose.prod.yaml up -d
+            docker compose -f compose.prod.yaml restart nginx
