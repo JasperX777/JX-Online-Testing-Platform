@@ -114,9 +114,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: |
-            compose.prod.yaml
-            docker/nginx/default.conf
+          source: "compose.prod.yaml,docker/nginx/default.conf"
           target: ${{ secrets.DEPLOY_PATH }}
           strip_components: 0
 
