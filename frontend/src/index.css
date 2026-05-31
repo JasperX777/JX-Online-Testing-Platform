@@ -981,3 +981,20 @@ th {
   margin: 0;
   color: var(--text-muted);
 }
+
+.picker-screenshot-wrap {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  background: #0b1118;
+}
+
+.picker-screenshot {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+  user-select: none;
+}

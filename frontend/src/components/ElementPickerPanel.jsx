@@ -18,6 +18,7 @@ export default function ElementPickerPanel({
   const sessionIdRef = useRef(null)
   const deliveredPickRef = useRef('')
   const pickerWindowRef = useRef(null)
+  const screenshotRef = useRef(null)
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -56,7 +57,12 @@ export default function ElementPickerPanel({
   }, [])
 
   useEffect(() => {
-    if (!session?.session_id || session.client_picker || terminalStatuses.has(session.status)) {
+    if (
+      !session?.session_id ||
+      session.client_picker ||
+      (session.screenshot_picker && session.status === 'ready') ||
+      terminalStatuses.has(session.status)
+    ) {
       if (pollTimerRef.current) {
         window.clearInterval(pollTimerRef.current)
         pollTimerRef.current = null
@@ -77,7 +83,11 @@ export default function ElementPickerPanel({
           })
           setStatus(`Picked "${nextSession.target || 'element'}" for ${activeStepTitle || `step ${activeStepIndex + 1}`}.`)
         } else if (nextSession.status === 'ready') {
-          setStatus('Picker window is ready. Click one element in the visible browser window to capture it.')
+          setStatus(
+            nextSession.screenshot_picker
+              ? 'Picker screenshot is ready. Click the target element in the preview below.'
+              : 'Picker window is ready. Click one element in the visible browser window to capture it.',
+          )
         } else if (nextSession.status === 'starting') {
           setStatus('Launching the picker browser window...')
         } else if (nextSession.status === 'error') {
@@ -86,7 +96,10 @@ export default function ElementPickerPanel({
           setStatus('Picker session stopped.')
         }
 
-        if (terminalStatuses.has(nextSession.status) && pollTimerRef.current) {
+        if (
+          (nextSession.screenshot_picker && nextSession.status === 'ready') ||
+          (terminalStatuses.has(nextSession.status) && pollTimerRef.current)
+        ) {
           window.clearInterval(pollTimerRef.current)
           pollTimerRef.current = null
         }
@@ -166,6 +179,43 @@ export default function ElementPickerPanel({
     }
   }
 
+  const onScreenshotClick = (event) => {
+    const image = screenshotRef.current
+    if (!image || !session?.elements?.length) return
+
+    const rect = image.getBoundingClientRect()
+    const scaleX = (session.viewport?.width || image.naturalWidth) / rect.width
+    const scaleY = (session.viewport?.height || image.naturalHeight) / rect.height
+    const x = (event.clientX - rect.left) * scaleX
+    const y = (event.clientY - rect.top) * scaleY
+
+    const matches = session.elements.filter(
+      (element) =>
+        x >= element.x &&
+        x <= element.x + element.width &&
+        y >= element.y &&
+        y <= element.y + element.height,
+    )
+    const picked = matches.sort((a, b) => a.width * a.height - b.width * b.height)[0]
+
+    if (!picked) {
+      setStatus('No selectable element found at that point. Try clicking the center of the target control.')
+      return
+    }
+
+    onPick({
+      target: picked.target || '',
+      selector: picked.selector || '',
+    })
+    setSession((prev) => ({
+      ...(prev || {}),
+      status: 'picked',
+      target: picked.target || '',
+      selector: picked.selector || '',
+    }))
+    setStatus(`Picked "${picked.target || 'element'}" for ${activeStepTitle || `step ${activeStepIndex + 1}`}.`)
+  }
+
   const stopPicker = async () => {
     if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
       pickerWindowRef.current.close()
@@ -190,7 +240,7 @@ export default function ElementPickerPanel({
       <div className="card-header">
         <div>
           <h4>Pick Element</h4>
-          <p className="muted-text">Start a visible Playwright picker window, then click one element in that browser to fill the active step target and selector.</p>
+          <p className="muted-text">Open a picker for the target page, then click one element to fill the active step target and selector.</p>
         </div>
       </div>
 
@@ -238,9 +288,20 @@ export default function ElementPickerPanel({
         <div className="picker-help-list">
           <p>1. Choose the step you want to fill.</p>
           <p>2. Enter or reuse the page URL.</p>
-          <p>3. Click `Start Picker` and wait for the browser window to open.</p>
-          <p>4. Click the target element once in that browser window.</p>
+          <p>3. Click `Start Picker` and wait for the picker to become ready.</p>
+          <p>4. Click the target element in the popup or screenshot preview.</p>
         </div>
+        {session?.screenshot_data ? (
+          <div className="picker-screenshot-wrap">
+            <img
+              ref={screenshotRef}
+              alt="Picker page screenshot"
+              className="picker-screenshot"
+              src={session.screenshot_data}
+              onClick={onScreenshotClick}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   )
