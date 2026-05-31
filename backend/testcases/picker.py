@@ -147,21 +147,33 @@ def _run_picker_session(*, session_id: str) -> None:
                   }
 
                   function buildSelector(element) {
-                    const id = element.getAttribute('id')
-                    if (id) return `#${escapeCssValue(id)}`
-
                     const name = element.getAttribute('name')
-                    if (name) return `${element.tagName.toLowerCase()}[name="${escapeCssValue(name)}"]`
-
                     const dataTestId = element.getAttribute('data-testid')
-                    if (dataTestId) return `${element.tagName.toLowerCase()}[data-testid="${escapeCssValue(dataTestId)}"]`
-
+                    const ariaLabel = element.getAttribute('aria-label')
+                    const placeholder = element.getAttribute('placeholder')
+                    const id = element.getAttribute('id')
                     const classes = [...element.classList].filter(Boolean)
-                    if (classes.length > 0) {
-                      return `${element.tagName.toLowerCase()}.${classes.slice(0, 2).map(escapeCssValue).join('.')}`
+                    const tagName = element.tagName.toLowerCase()
+
+                    const candidates = [
+                      dataTestId ? `${tagName}[data-testid="${escapeCssValue(dataTestId)}"]` : '',
+                      name ? `${tagName}[name="${escapeCssValue(name)}"]` : '',
+                      ariaLabel ? `${tagName}[aria-label="${escapeCssValue(ariaLabel)}"]` : '',
+                      placeholder ? `${tagName}[placeholder="${escapeCssValue(placeholder)}"]` : '',
+                      id ? `#${escapeCssValue(id)}` : '',
+                      classes.length > 0 ? `${tagName}.${classes.slice(0, 2).map(escapeCssValue).join('.')}` : '',
+                      tagName,
+                    ].filter(Boolean)
+
+                    for (const candidate of candidates) {
+                      try {
+                        if (document.querySelectorAll(candidate).length === 1) return candidate
+                      } catch {
+                        // Try the next selector candidate.
+                      }
                     }
 
-                    return element.tagName.toLowerCase()
+                    return candidates[0] || tagName
                   }
 
                   const candidates = [

@@ -179,6 +179,22 @@ export default function ElementPickerPanel({
     }
   }
 
+  const pickElement = (picked) => {
+    if (!picked) return
+
+    onPick({
+      target: picked.target || '',
+      selector: picked.selector || '',
+    })
+    setSession((prev) => ({
+      ...(prev || {}),
+      status: 'picked',
+      target: picked.target || '',
+      selector: picked.selector || '',
+    }))
+    setStatus(`Picked "${picked.target || 'element'}" for ${activeStepTitle || `step ${activeStepIndex + 1}`}.`)
+  }
+
   const onScreenshotClick = (event) => {
     const image = screenshotRef.current
     if (!image || !session?.elements?.length) return
@@ -203,17 +219,7 @@ export default function ElementPickerPanel({
       return
     }
 
-    onPick({
-      target: picked.target || '',
-      selector: picked.selector || '',
-    })
-    setSession((prev) => ({
-      ...(prev || {}),
-      status: 'picked',
-      target: picked.target || '',
-      selector: picked.selector || '',
-    }))
-    setStatus(`Picked "${picked.target || 'element'}" for ${activeStepTitle || `step ${activeStepIndex + 1}`}.`)
+    pickElement(picked)
   }
 
   const stopPicker = async () => {
@@ -293,13 +299,35 @@ export default function ElementPickerPanel({
         </div>
         {session?.screenshot_data ? (
           <div className="picker-screenshot-wrap">
-            <img
-              ref={screenshotRef}
-              alt="Picker page screenshot"
-              className="picker-screenshot"
-              src={session.screenshot_data}
-              onClick={onScreenshotClick}
-            />
+            <div className="picker-screenshot-stage">
+              <img
+                ref={screenshotRef}
+                alt="Picker page screenshot"
+                className="picker-screenshot"
+                src={session.screenshot_data}
+                onClick={onScreenshotClick}
+              />
+              {session.elements?.map((element) => (
+                <button
+                  key={`${element.index}-${element.selector}`}
+                  type="button"
+                  className="picker-element-hitbox"
+                  title={`${element.target || element.tag}: ${element.selector}`}
+                  style={{
+                    left: `${(element.x / (session.viewport?.width || 1440)) * 100}%`,
+                    top: `${(element.y / (session.viewport?.height || 900)) * 100}%`,
+                    width: `${(element.width / (session.viewport?.width || 1440)) * 100}%`,
+                    height: `${(element.height / (session.viewport?.height || 900)) * 100}%`,
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    pickElement(element)
+                  }}
+                >
+                  <span>{element.target || element.tag}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
