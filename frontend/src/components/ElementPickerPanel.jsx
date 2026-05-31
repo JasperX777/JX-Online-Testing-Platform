@@ -17,6 +17,29 @@ export default function ElementPickerPanel({
   const pollTimerRef = useRef(null)
   const sessionIdRef = useRef(null)
   const deliveredPickRef = useRef('')
+  const pickerWindowRef = useRef(null)
+
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'jx-element-picked') return
+
+      onPick({
+        target: event.data.target || '',
+        selector: event.data.selector || '',
+      })
+      setSession((prev) => ({
+        ...(prev || {}),
+        status: 'picked',
+        target: event.data.target || '',
+        selector: event.data.selector || '',
+      }))
+      setStatus(`Picked "${event.data.target || 'element'}" for ${activeStepTitle || `step ${activeStepIndex + 1}`}.`)
+      pickerWindowRef.current = null
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [activeStepIndex, activeStepTitle, onPick])
 
   useEffect(() => {
     return () => {
@@ -26,11 +49,14 @@ export default function ElementPickerPanel({
       if (sessionIdRef.current) {
         void api.post(`/api/testcases/picker/${sessionIdRef.current}/stop/`, {}).catch(() => {})
       }
+      if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
+        pickerWindowRef.current.close()
+      }
     }
   }, [])
 
   useEffect(() => {
-    if (!session?.session_id || terminalStatuses.has(session.status)) {
+    if (!session?.session_id || session.client_picker || terminalStatuses.has(session.status)) {
       if (pollTimerRef.current) {
         window.clearInterval(pollTimerRef.current)
         pollTimerRef.current = null
@@ -93,6 +119,36 @@ export default function ElementPickerPanel({
       return
     }
 
+    let parsedUrl
+    try {
+      parsedUrl = new URL(url, window.location.href)
+    } catch {
+      setStatus('Enter a valid page URL before starting the picker.')
+      return
+    }
+
+    if (parsedUrl.origin === window.location.origin) {
+      if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
+        pickerWindowRef.current.close()
+      }
+      parsedUrl.searchParams.set('__jx_picker', '1')
+      const pickerWindow = window.open(parsedUrl.toString(), 'jx-element-picker', 'width=1440,height=900')
+      if (!pickerWindow) {
+        setStatus('The browser blocked the picker popup. Allow popups for this site and try again.')
+        return
+      }
+      pickerWindowRef.current = pickerWindow
+      sessionIdRef.current = null
+      setSession({
+        session_id: `client-${Date.now()}`,
+        status: 'ready',
+        browser_name: 'current browser',
+        client_picker: true,
+      })
+      setStatus('Picker window is ready. Click one element in the opened browser window to capture it.')
+      return
+    }
+
     try {
       if (sessionIdRef.current) {
         await api.post(`/api/testcases/picker/${sessionIdRef.current}/stop/`, {})
@@ -111,6 +167,14 @@ export default function ElementPickerPanel({
   }
 
   const stopPicker = async () => {
+    if (pickerWindowRef.current && !pickerWindowRef.current.closed) {
+      pickerWindowRef.current.close()
+      pickerWindowRef.current = null
+      setSession((prev) => ({ ...(prev || {}), status: 'stopped' }))
+      setStatus('Picker session stopped.')
+      return
+    }
+
     if (!session?.session_id) return
     try {
       const stopped = await api.post(`/api/testcases/picker/${session.session_id}/stop/`, {})
@@ -164,7 +228,7 @@ export default function ElementPickerPanel({
           </div>
           <div>
             <span className="picker-status-label">Browser</span>
-            <strong>{suggestedBrowser || 'chromium'}</strong>
+            <strong>{session?.browser_name || suggestedBrowser || 'chromium'}</strong>
           </div>
           <div>
             <span className="picker-status-label">Session status</span>

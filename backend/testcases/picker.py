@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -122,6 +125,7 @@ _PICKER_SCRIPT = r"""
 
 _sessions: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
+_display_lock = threading.Lock()
 
 
 def _normalize_url(url: str) -> str:
@@ -158,6 +162,43 @@ def _update_session(session_id: str, **changes: Any) -> dict[str, Any] | None:
             return None
         session.update(changes)
         return dict(session)
+
+
+def _start_virtual_display() -> tuple[subprocess.Popen[bytes] | None, dict[str, str]]:
+    env = os.environ.copy()
+    if env.get('DISPLAY'):
+        return None, env
+
+    xvfb_path = shutil.which('Xvfb')
+    if not xvfb_path:
+        raise RuntimeError(
+            'The picker needs a graphical display. Install Xvfb in the backend container '
+            'or run the picker on a machine with a desktop session.'
+        )
+
+    with _display_lock:
+        for display_number in range(90, 130):
+            display = f':{display_number}'
+            process = subprocess.Popen(
+                [
+                    xvfb_path,
+                    display,
+                    '-screen',
+                    '0',
+                    '1440x900x24',
+                    '-nolisten',
+                    'tcp',
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(0.2)
+            if process.poll() is None:
+                env['DISPLAY'] = display
+                return process, env
+            process.wait(timeout=1)
+
+    raise RuntimeError('Unable to start a virtual display for the picker.')
 
 
 def start_picker_session(*, url: str, browser_name: str = 'chromium') -> dict[str, Any]:
@@ -223,13 +264,15 @@ def _run_picker_session(*, session_id: str) -> None:
         stop_event.set()
 
     try:
+        virtual_display = None
         with sync_playwright() as playwright:
             session = get_picker_session(session_id)
             if session is None:
                 return
 
             launcher, _ = _get_browser_launcher(playwright, session['browser_name'])
-            browser = launcher.launch(headless=False)
+            virtual_display, browser_env = _start_virtual_display()
+            browser = launcher.launch(headless=False, env=browser_env)
             context = browser.new_context(viewport={'width': 1440, 'height': 900})
             context.expose_binding('__codexPickerPick', handle_pick)
             context.add_init_script(_PICKER_SCRIPT)
@@ -255,3 +298,10 @@ def _run_picker_session(*, session_id: str) -> None:
             browser.close()
     except Exception as exc:
         _update_session(session_id, status='error', error=str(exc))
+    finally:
+        if virtual_display is not None and virtual_display.poll() is None:
+            virtual_display.terminate()
+            try:
+                virtual_display.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                virtual_display.kill()
