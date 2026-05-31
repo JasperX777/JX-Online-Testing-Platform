@@ -31,9 +31,9 @@ The backend currently provides three settings modules:
 
 Entrypoints:
 
-- [manage.py](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend/manage.py)
-- [config/asgi.py](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend/config/asgi.py)
-- [config/celery.py](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend/config/celery.py)
+- [manage.py](manage.py)
+- [config/asgi.py](config/asgi.py)
+- [config/celery.py](config/celery.py)
 
 All of them support environment-based switching through `DJANGO_SETTINGS_MODULE`.
 
@@ -46,7 +46,7 @@ All of them support environment-based switching through `DJANGO_SETTINGS_MODULE`
 
 ## API And Realtime
 
-[config/urls.py](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend/config/urls.py) exposes:
+[config/urls.py](config/urls.py) exposes:
 
 - `/api/auth/*` for authentication
 - `/api/projects/*` for project resources
@@ -79,7 +79,7 @@ In production these directories are mounted into Nginx so that static files and 
 ## Quality Gates
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend
+cd backend
 ./.venv/bin/python manage.py test --settings=config.settings.test
 ./.venv/bin/python manage.py check --deploy --fail-level WARNING --settings=config.settings.prod
 ```

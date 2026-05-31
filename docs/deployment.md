@@ -13,15 +13,16 @@ The production stack contains:
 
 ## Files
 
-- Local or pre-production stack: [compose.yaml](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/compose.yaml)
-- Production stack: [compose.prod.yaml](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/compose.prod.yaml)
-- Reverse proxy config: [docker/nginx/default.conf](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/docker/nginx/default.conf)
-- Environment template: [.env.example](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/.env.example)
+- Local or pre-production stack: [compose.yaml](../compose.yaml)
+- Production stack: [compose.prod.yaml](../compose.prod.yaml)
+- Reverse proxy config: [docker/nginx/default.conf](../docker/nginx/default.conf)
+- Environment template: [.env.example](../.env.example)
 
 ## Local Validation
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform
+git clone https://github.com/JasperX777/JX-Online-Testing-Platform.git
+cd JX-Online-Testing-Platform
 cp .env.example .env
 docker compose up --build -d
 docker compose ps
@@ -82,7 +83,7 @@ Recommended production values:
 
 ### CI
 
-[.github/workflows/ci.yml](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/.github/workflows/ci.yml) runs on push and pull request and validates:
+[.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on push and pull request and validates:
 
 - backend dependency installation
 - Django tests
@@ -93,7 +94,7 @@ Recommended production values:
 
 ### CD
 
-[.github/workflows/deploy.yml](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/.github/workflows/deploy.yml) can:
+[.github/workflows/deploy.yml](../.github/workflows/deploy.yml) can:
 
 1. build backend and frontend images
 2. publish images to GHCR

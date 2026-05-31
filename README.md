@@ -82,10 +82,36 @@ flowchart TD
 
 ## Getting Started
 
+```bash
+git clone https://github.com/JasperX777/JX-Online-Testing-Platform.git
+cd JX-Online-Testing-Platform
+```
+
+### Docker Quick Start
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+This starts the full local stack:
+
+- frontend
+- backend
+- Celery worker
+- PostgreSQL
+- Redis
+- Nginx
+
+Key endpoints:
+
+- Application: `http://localhost`
+- Health check: `http://localhost/api/health/`
+
 ### Frontend
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend
+cd frontend
 npm ci
 npm run dev
 ```
@@ -93,7 +119,7 @@ npm run dev
 ### Backend
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend
+cd backend
 ./.venv/bin/python manage.py migrate
 ./.venv/bin/python manage.py runserver
 ```
@@ -101,7 +127,7 @@ cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend
 ### Background Worker
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend
+cd backend
 ./.venv/bin/celery -A config worker --loglevel=info
 ```
 
@@ -114,22 +140,16 @@ By default:
 ## Docker Deployment
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform
 cp .env.example .env
 docker compose up --build -d
 ```
-
-Key endpoints:
-
-- Application: `http://localhost`
-- Health check: `http://localhost/api/health/`
 
 ## Quality Gates
 
 Frontend:
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend
+cd frontend
 npm run lint
 npm run build
 ```
@@ -137,16 +157,16 @@ npm run build
 Backend:
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend
+cd backend
 ./.venv/bin/python manage.py test --settings=config.settings.test
 ./.venv/bin/python manage.py check --deploy --fail-level WARNING --settings=config.settings.prod
 ```
 
 ## CI/CD
 
-- Continuous integration: [`.github/workflows/ci.yml`](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/.github/workflows/ci.yml)
-- Build and deployment pipeline: [`.github/workflows/deploy.yml`](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/.github/workflows/deploy.yml)
-- Production compose file: [`compose.prod.yaml`](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/compose.prod.yaml)
+- Continuous integration: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+- Build and deployment pipeline: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
+- Production compose file: [`compose.prod.yaml`](compose.prod.yaml)
 
 The pipeline validates frontend and backend changes, builds container images, publishes them to GHCR, and can deploy the stack to a remote server over SSH.
 
@@ -158,6 +178,6 @@ The pipeline validates frontend and backend changes, builds container images, pu
 
 ## Documentation
 
-- Frontend notes: [frontend/README.md](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend/README.md)
-- Backend notes: [backend/README.md](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/backend/README.md)
-- Deployment guide: [docs/deployment.md](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/docs/deployment.md)
+- Frontend notes: [frontend/README.md](frontend/README.md)
+- Backend notes: [backend/README.md](backend/README.md)
+- Deployment guide: [docs/deployment.md](docs/deployment.md)

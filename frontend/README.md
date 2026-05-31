@@ -35,7 +35,7 @@ src/
 
 ## API Access Pattern
 
-[src/lib/api.js](/Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend/src/lib/api.js) provides a unified request layer that:
+[src/lib/api.js](src/lib/api.js) provides a unified request layer that:
 
 - attaches the current JWT access token automatically
 - retries once after refreshing the access token on `401`
@@ -46,7 +46,7 @@ Because production traffic is routed through one domain and one Nginx entrypoint
 ## Build And Quality
 
 ```bash
-cd /Users/jasperxue/PycharmProjects/JX-Online-Testing-Platform/frontend
+cd frontend
 npm ci
 npm run lint
 npm run build
