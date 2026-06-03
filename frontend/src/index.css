@@ -1020,7 +1020,7 @@ th {
 .picker-element-hitbox:hover,
 .picker-element-hitbox:focus {
   z-index: 2;
-  border-color: var(--accent);
+  border-color: var(--signal);
   background: rgba(91, 228, 208, 0.22);
   outline: none;
 }
@@ -1034,7 +1034,7 @@ th {
   padding: 4px 6px;
   border-radius: 4px;
   background: rgba(8, 13, 19, 0.96);
-  color: var(--text);
+  color: var(--text-main);
   font-size: 0.75rem;
   line-height: 1.2;
   white-space: nowrap;

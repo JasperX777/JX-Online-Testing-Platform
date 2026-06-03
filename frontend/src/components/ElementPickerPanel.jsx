@@ -118,7 +118,15 @@ export default function ElementPickerPanel({
         pollTimerRef.current = null
       }
     }
-  }, [activeStepIndex, activeStepTitle, onPick, session?.session_id, session?.status])
+  }, [
+    activeStepIndex,
+    activeStepTitle,
+    onPick,
+    session?.client_picker,
+    session?.screenshot_picker,
+    session?.session_id,
+    session?.status,
+  ])
 
   const startPicker = async () => {
     if (activeStepIndex === null || activeStepIndex === undefined) {
