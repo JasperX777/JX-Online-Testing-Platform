@@ -22,6 +22,7 @@ The backend is responsible for:
 - asynchronous execution dispatch through Celery workers
 - scheduled execution dispatch through Celery beat
 - permission-scoped execution analytics
+- persistent dispatch-failure reporting and Celery task retries
 
 ## Settings Model
 
@@ -92,3 +93,4 @@ CI currently enforces:
 
 - Django test execution with a minimum 80% backend coverage threshold
 - production configuration checks
+- Python dependency vulnerability auditing

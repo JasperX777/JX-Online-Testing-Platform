@@ -155,6 +155,8 @@ Frontend:
 ```bash
 cd frontend
 npm run lint
+npm run test
+npm run test:e2e
 npm run build
 ```
 
@@ -174,6 +176,7 @@ cd backend
 - Production compose file: [`compose.prod.yaml`](compose.prod.yaml)
 
 The pipeline validates frontend and backend changes, builds container images, publishes them to GHCR, and can deploy the stack to a remote server over SSH.
+CI also audits Python and Node dependencies, enforces backend and frontend coverage thresholds, runs the mocked full-user workflow across Chromium, Firefox, and WebKit, and verifies a real Django-to-browser-executor integration workflow. Dependabot checks dependency updates weekly.
 
 ## Use Cases
 
@@ -186,3 +189,4 @@ The pipeline validates frontend and backend changes, builds container images, pu
 - Frontend notes: [frontend/README.md](frontend/README.md)
 - Backend notes: [backend/README.md](backend/README.md)
 - Deployment guide: [docs/deployment.md](docs/deployment.md)
+- Quality assurance record: [docs/quality-assurance.md](docs/quality-assurance.md)

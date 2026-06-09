@@ -55,6 +55,8 @@ npm run build
 CI currently runs:
 
 - `npm run lint`
+- `npm run test`
+- `npm run test:e2e`
 - `npm run build`
 
 ## Containerization
@@ -63,7 +65,13 @@ CI currently runs:
 - Runtime stage: `nginx:1.27-alpine`
 - SPA refresh support: `try_files $uri $uri/ /index.html`
 
-## Follow-Up
+## Quality Gates
 
-- The frontend currently has lint and build validation, but no unit test suite yet.
-- If you want stronger UI quality gates later, `Vitest` and `React Testing Library` would be the natural next step.
+```bash
+npm run lint
+npm run test
+npm run test:e2e
+npm run build
+```
+
+Vitest and React Testing Library cover reusable UI components and API authentication/error behaviour. Coverage includes every source module so untested route-level pages remain visible in the report. Playwright runs the fast mocked workflow in Chromium, Firefox, and WebKit, plus a real-stack Chromium workflow covering Django authentication, project and test-case APIs, scheduling, Celery eager dispatch, Playwright browser execution, persisted results, and the execution detail UI.
