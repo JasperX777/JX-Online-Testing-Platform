@@ -165,6 +165,7 @@ class ExecutionScheduleSerializer(serializers.ModelSerializer):
             'scheduled_for',
             'status',
             'dispatched_at',
+            'failure_reason',
             'created_at',
         )
         read_only_fields = (
@@ -173,6 +174,7 @@ class ExecutionScheduleSerializer(serializers.ModelSerializer):
             'execution',
             'status',
             'dispatched_at',
+            'failure_reason',
             'created_at',
         )
 

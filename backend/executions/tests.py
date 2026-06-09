@@ -29,8 +29,8 @@ from .automation import (
     _run_step,
 )
 from .reports import store_execution_report
-from .services import initialize_execution, run_test_execution
-from .tasks import dispatch_due_execution_schedules
+from .services import create_execution, initialize_execution, run_test_execution
+from .tasks import dispatch_due_execution_schedules, run_test_execution_task
 
 User = get_user_model()
 
@@ -249,6 +249,13 @@ class TestExecutionServiceTests(TestCase):
         self.assertEqual(execution.step_results.first().selector, '')
         self.assertEqual(execution.step_results.first().step_title, 'Launch browser')
 
+    def test_create_execution_creates_pending_snapshot(self):
+        execution = create_execution(project=self.project, testcase=self.tc, triggered_by=self.user)
+
+        self.assertEqual(execution.status, TestExecution.Status.PENDING)
+        self.assertEqual(execution.current_step_no, 1)
+        self.assertEqual(execution.step_results.count(), len(sample_steps()))
+
     @patch('executions.services.execute_steps')
     def test_run_execution_marks_success_when_automation_passes(self, execute_steps_mock):
         execute_steps_mock.return_value = {
@@ -408,6 +415,24 @@ class TestExecutionApiTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_201_CREATED)
         self.assertEqual(TestExecution.objects.filter(testcase=self.tc).count(), 2)
         self.assertEqual(dispatch_mock.call_count, 2)
+
+    @patch('executions.views.dispatch_test_execution', side_effect=ConnectionError('broker unavailable'))
+    def test_dispatch_failure_is_recorded_and_returns_service_unavailable(self, dispatch_mock):
+        self.auth()
+
+        response = self.client.post(
+            '/api/executions/run/',
+            {'project': self.project.id, 'testcase': self.tc.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        execution = TestExecution.objects.get(id=response.data['id'])
+        self.assertEqual(execution.status, TestExecution.Status.FAILED)
+        self.assertIn('broker unavailable', execution.failure_reason)
+        self.assertTrue(execution.logs.filter(level=ExecutionLog.Level.ERROR).exists())
+        self.assertTrue(ExecutionReport.objects.filter(execution=execution).exists())
+        dispatch_mock.assert_called_once_with(execution.id)
 
     def test_delete_execution_removes_media_files(self):
         with TemporaryDirectory() as temp_dir:
@@ -584,6 +609,39 @@ class ExecutionScheduleTaskTests(TestCase):
         self.assertEqual(due.status, ExecutionSchedule.Status.DISPATCHED)
         self.assertIsNotNone(due.execution)
         self.assertEqual(due.execution.step_results.count(), len(sample_steps()))
+        dispatch_mock.assert_called_once_with(due.execution_id)
+
+    @patch('executions.tasks.run_test_execution', side_effect=RuntimeError('permanent worker failure'))
+    def test_execution_task_records_failure_after_maximum_retries(self, run_mock):
+        execution = create_execution(project=self.project, testcase=self.tc, triggered_by=self.user)
+
+        with patch.object(run_test_execution_task.request, 'retries', run_test_execution_task.max_retries):
+            with self.assertRaises(RuntimeError):
+                run_test_execution_task._orig_run(execution.id)
+        execution.refresh_from_db()
+
+        run_mock.assert_called_once()
+        self.assertEqual(execution.status, TestExecution.Status.FAILED)
+        self.assertIn('failed after 4 attempts', execution.failure_reason)
+        self.assertTrue(execution.logs.filter(level=ExecutionLog.Level.ERROR).exists())
+
+    @patch('executions.tasks.dispatch_test_execution', side_effect=ConnectionError('redis unavailable'))
+    def test_marks_schedule_and_execution_failed_when_dispatch_fails(self, dispatch_mock):
+        due = ExecutionSchedule.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            created_by=self.user,
+            scheduled_for=timezone.now() - timedelta(minutes=1),
+        )
+
+        result = dispatch_due_execution_schedules()
+        due.refresh_from_db()
+
+        self.assertEqual(result, [])
+        self.assertEqual(due.status, ExecutionSchedule.Status.FAILED)
+        self.assertIn('redis unavailable', due.failure_reason)
+        self.assertEqual(due.execution.status, TestExecution.Status.FAILED)
+        self.assertTrue(due.execution.logs.filter(level=ExecutionLog.Level.ERROR).exists())
         dispatch_mock.assert_called_once_with(due.execution_id)
 
 

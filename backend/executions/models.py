@@ -57,6 +57,7 @@ class ExecutionSchedule(models.Model):
         PENDING = 'pending', 'Pending'
         DISPATCHED = 'dispatched', 'Dispatched'
         CANCELLED = 'cancelled', 'Cancelled'
+        FAILED = 'failed', 'Failed'
 
     project = models.ForeignKey(
         Project,
@@ -87,10 +88,14 @@ class ExecutionSchedule(models.Model):
         default=Status.PENDING,
     )
     dispatched_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['scheduled_for']
+        indexes = [
+            models.Index(fields=['status', 'scheduled_for'], name='exec_sched_due_idx'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.project_id}:{self.testcase_id}:{self.scheduled_for}'

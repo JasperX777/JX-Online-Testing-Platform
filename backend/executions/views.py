@@ -21,7 +21,7 @@ from .serializers import (
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
-from .services import cleanup_execution_media, initialize_execution
+from .services import cleanup_execution_media, create_execution, mark_execution_dispatch_failed
 from .tasks import dispatch_test_execution
 
 
@@ -130,14 +130,22 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
         if not (request.user.is_superuser or role in {'admin', 'user'}):
             return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
-        execution = TestExecution.objects.create(
+        execution = create_execution(
             project=project,
             testcase=testcase,
             triggered_by=request.user,
-            status=TestExecution.Status.PENDING,
         )
-        initialize_execution(execution=execution)
-        dispatch_test_execution(execution.id)
+        try:
+            dispatch_test_execution(execution.id)
+        except Exception as exc:
+            mark_execution_dispatch_failed(
+                execution=execution,
+                reason=f'Unable to dispatch execution: {exc}',
+            )
+            return Response(
+                TestExecutionSerializer(execution).data,
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(TestExecutionSerializer(execution).data, status=status.HTTP_201_CREATED)
 

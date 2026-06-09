@@ -10,6 +10,17 @@ from .realtime import broadcast_execution_event
 from .reports import store_execution_report
 
 
+def create_execution(*, project, testcase, triggered_by):
+    """Create an execution and freeze its current test-case steps."""
+    execution = TestExecution.objects.create(
+        project=project,
+        testcase=testcase,
+        triggered_by=triggered_by,
+        status=TestExecution.Status.PENDING,
+    )
+    return initialize_execution(execution=execution)
+
+
 def _serialize_execution_update(execution: TestExecution):
     return TestExecution.objects.select_related('project', 'testcase', 'triggered_by', 'report').prefetch_related('step_results').get(id=execution.id)
 
@@ -195,6 +206,23 @@ def _mark_execution_success(*, execution: TestExecution):
         execution=_serialize_execution_update(execution),
         report=report,
     )
+
+
+def mark_execution_dispatch_failed(*, execution: TestExecution, reason: str):
+    """Persist a dispatch failure so it is visible instead of silently lost."""
+    execution.status = TestExecution.Status.FAILED
+    execution.result_summary = reason
+    execution.failure_reason = reason
+    execution.finished_at = timezone.now()
+    execution.save(update_fields=['status', 'result_summary', 'failure_reason', 'finished_at'])
+    _write_execution_log(execution=execution, level=ExecutionLog.Level.ERROR, message=reason)
+    report = store_execution_report(execution=_serialize_execution_update(execution))
+    broadcast_execution_event(
+        event='execution.finished',
+        execution=_serialize_execution_update(execution),
+        report=report,
+    )
+    return execution
 
 
 def run_test_execution(*, execution: TestExecution):
