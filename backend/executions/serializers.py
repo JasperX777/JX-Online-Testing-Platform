@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.conf import settings
+from django.utils import timezone
 
-from .models import ExecutionLog, ExecutionReport, ExecutionStepResult, TestExecution
+from .models import ExecutionLog, ExecutionReport, ExecutionSchedule, ExecutionStepResult, TestExecution
 
 
 class ExecutionLogSerializer(serializers.ModelSerializer):
@@ -143,3 +144,54 @@ class TestExecutionRunSerializer(serializers.Serializer):
         attrs['project_obj'] = project
         attrs['testcase_obj'] = testcase
         return attrs
+
+
+class ExecutionScheduleSerializer(serializers.ModelSerializer):
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    testcase_title = serializers.CharField(source='testcase.title', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = ExecutionSchedule
+        fields = (
+            'id',
+            'project',
+            'project_name',
+            'testcase',
+            'testcase_title',
+            'created_by',
+            'created_by_username',
+            'execution',
+            'scheduled_for',
+            'status',
+            'dispatched_at',
+            'created_at',
+        )
+        read_only_fields = (
+            'created_by',
+            'created_by_username',
+            'execution',
+            'status',
+            'dispatched_at',
+            'created_at',
+        )
+
+    def validate(self, attrs):
+        request = self.context['request']
+        project = attrs['project']
+        testcase = attrs['testcase']
+        role = getattr(getattr(request.user, 'profile', None), 'role', None)
+
+        if testcase.project_id != project.id:
+            raise serializers.ValidationError({'testcase': 'Test case does not belong to this project.'})
+        if not testcase.steps_json:
+            raise serializers.ValidationError({'testcase': 'Test case requires at least one step.'})
+        if attrs['scheduled_for'] <= timezone.now():
+            raise serializers.ValidationError({'scheduled_for': 'Scheduled time must be in the future.'})
+        if not (request.user.is_superuser or role == 'admin' or project.owner_id == request.user.id):
+            raise serializers.ValidationError({'project': 'Project not found.'})
+
+        return attrs
+
+    def create(self, validated_data):
+        return ExecutionSchedule.objects.create(created_by=self.context['request'].user, **validated_data)

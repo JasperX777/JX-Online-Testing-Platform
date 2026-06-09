@@ -1,18 +1,23 @@
-from django.db.models import Q
+from datetime import timedelta
+
+from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
+from django.utils import timezone
 from rest_framework import mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import GenericViewSet, ReadOnlyModelViewSet
+from rest_framework.viewsets import GenericViewSet, ModelViewSet, ReadOnlyModelViewSet
 
 from projects.models import Project
 
-from .models import ExecutionLog, TestExecution
+from .models import ExecutionLog, ExecutionSchedule, TestExecution
 from .permissions import CanManageExecution
 from .serializers import (
     ExecutionLogSerializer,
     ExecutionReportSerializer,
+    ExecutionScheduleSerializer,
     TestExecutionRunSerializer,
     TestExecutionSerializer,
 )
@@ -135,3 +140,82 @@ class RunTestExecutionView(ExecutionAccessMixin, APIView):
         dispatch_test_execution(execution.id)
 
         return Response(TestExecutionSerializer(execution).data, status=status.HTTP_201_CREATED)
+
+
+class ExecutionScheduleViewSet(ExecutionAccessMixin, ModelViewSet):
+    serializer_class = ExecutionScheduleSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_queryset(self):
+        user = self.request.user
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        queryset = ExecutionSchedule.objects.select_related('project', 'testcase', 'created_by', 'execution')
+        if not (user.is_superuser or role == 'admin'):
+            queryset = queryset.filter(created_by=user)
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        schedule = self.get_object()
+        if schedule.status != ExecutionSchedule.Status.PENDING:
+            return Response(
+                {'detail': 'Only pending schedules can be cancelled.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        schedule.status = ExecutionSchedule.Status.CANCELLED
+        schedule.save(update_fields=['status'])
+        return Response(self.get_serializer(schedule).data)
+
+
+class ExecutionAnalyticsView(ExecutionAccessMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        visibility_filter = self.get_execution_visibility_filter()
+        queryset = TestExecution.objects.all()
+        if visibility_filter:
+            queryset = queryset.filter(visibility_filter)
+
+        status_counts = {
+            row['status']: row['count']
+            for row in queryset.values('status').annotate(count=Count('id'))
+        }
+        completed_count = status_counts.get(TestExecution.Status.SUCCESS, 0) + status_counts.get(TestExecution.Status.FAILED, 0)
+        success_count = status_counts.get(TestExecution.Status.SUCCESS, 0)
+        pass_rate = round((success_count / completed_count) * 100, 1) if completed_count else 0
+
+        today = timezone.localdate()
+        start_date = today - timedelta(days=6)
+        trend_rows = {
+            row['day']: row
+            for row in queryset.filter(created_at__date__gte=start_date)
+            .annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(
+                total=Count('id'),
+                success=Count('id', filter=Q(status=TestExecution.Status.SUCCESS)),
+                failed=Count('id', filter=Q(status=TestExecution.Status.FAILED)),
+            )
+            .order_by('day')
+        }
+        trend = []
+        for offset in range(7):
+            day = start_date + timedelta(days=offset)
+            row = trend_rows.get(day, {})
+            trend.append({
+                'date': day.isoformat(),
+                'total': row.get('total', 0),
+                'success': row.get('success', 0),
+                'failed': row.get('failed', 0),
+            })
+
+        return Response({
+            'total': queryset.count(),
+            'status_counts': {
+                choice.value: status_counts.get(choice.value, 0)
+                for choice in TestExecution.Status
+            },
+            'pass_rate': pass_rate,
+            'trend': trend,
+        })

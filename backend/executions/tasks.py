@@ -1,8 +1,10 @@
 import threading
 
 from celery import shared_task
+from django.db import transaction
+from django.utils import timezone
 
-from .models import TestExecution
+from .models import ExecutionSchedule, TestExecution
 from .services import initialize_execution, run_test_execution
 
 
@@ -23,3 +25,37 @@ def dispatch_test_execution(execution_id: int):
             daemon=True,
         )
         thread.start()
+
+
+@shared_task
+def dispatch_due_execution_schedules():
+    dispatched_ids = []
+    due_schedule_ids = list(
+        ExecutionSchedule.objects.filter(
+            status=ExecutionSchedule.Status.PENDING,
+            scheduled_for__lte=timezone.now(),
+        ).values_list('id', flat=True)
+    )
+
+    for schedule_id in due_schedule_ids:
+        with transaction.atomic():
+            schedule = ExecutionSchedule.objects.select_for_update().get(id=schedule_id)
+            if schedule.status != ExecutionSchedule.Status.PENDING:
+                continue
+
+            execution = TestExecution.objects.create(
+                project=schedule.project,
+                testcase=schedule.testcase,
+                triggered_by=schedule.created_by,
+                status=TestExecution.Status.PENDING,
+            )
+            initialize_execution(execution=execution)
+            schedule.execution = execution
+            schedule.status = ExecutionSchedule.Status.DISPATCHED
+            schedule.dispatched_at = timezone.now()
+            schedule.save(update_fields=['execution', 'status', 'dispatched_at'])
+
+        dispatch_test_execution(execution.id)
+        dispatched_ids.append(execution.id)
+
+    return dispatched_ids

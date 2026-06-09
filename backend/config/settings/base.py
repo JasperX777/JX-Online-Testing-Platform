@@ -147,6 +147,12 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    'dispatch-due-execution-schedules': {
+        'task': 'executions.tasks.dispatch_due_execution_schedules',
+        'schedule': 60.0,
+    },
+}
 
 CHANNEL_REDIS_URL = os.getenv('CHANNEL_REDIS_URL', CELERY_BROKER_URL)
 CHANNEL_LAYERS = {
