@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import ActionModal from '../components/ActionModal'
+import ScheduleTable from '../components/ScheduleTable'
 import StatusPill from '../components/StatusPill'
 import { api } from '../lib/api'
 import { getAccessToken } from '../lib/authStorage'
@@ -271,43 +272,7 @@ export default function ExecutionsPage() {
         {error ? <p className="error-text">{error}</p> : null}
       </section>
 
-      <section className="card reveal">
-        <h3>Scheduled Executions</h3>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Test Case</th>
-                <th>Scheduled For</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="muted-cell">No scheduled executions.</td>
-                </tr>
-              ) : schedules.map((schedule) => (
-                <tr key={schedule.id}>
-                  <td>{schedule.project_name}</td>
-                  <td>{schedule.testcase_title}</td>
-                  <td>{new Date(schedule.scheduled_for).toLocaleString()}</td>
-                  <td><StatusPill status={schedule.status} /></td>
-                  <td>
-                    {schedule.status === 'pending' ? (
-                      <button className="button danger" type="button" onClick={() => cancelSchedule(schedule.id)}>
-                        Cancel
-                      </button>
-                    ) : '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ScheduleTable schedules={schedules} onCancel={cancelSchedule} />
 
       <section className="card reveal">
         <h3>Execution History</h3>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import ExecutionTrendChart from '../components/ExecutionTrendChart'
 import StatusPill from '../components/StatusPill'
 import { api } from '../lib/api'
 
@@ -56,8 +57,6 @@ export default function DashboardPage() {
   }, [projects, testcases, executions])
 
   const recentExecutions = executions.slice(0, 6)
-  const trendMax = Math.max(...(analytics?.trend || []).map((item) => item.total), 1)
-
   return (
     <div className="stack-lg">
       <section className="card reveal">
@@ -84,25 +83,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="card reveal">
-        <div className="card-header">
-          <div>
-            <h3>Seven-day Execution Trend</h3>
-            <p className="muted-text">Completed pass rate: {analytics?.pass_rate ?? 0}%</p>
-          </div>
-        </div>
-        <div className="trend-chart" aria-label="Execution totals for the last seven days">
-          {(analytics?.trend || []).map((item) => (
-            <div className="trend-column" key={item.date}>
-              <div className="trend-bar-track" title={`${item.total} total, ${item.success} successful, ${item.failed} failed`}>
-                <div className="trend-bar" style={{ height: `${Math.max((item.total / trendMax) * 100, item.total ? 8 : 0)}%` }} />
-              </div>
-              <strong>{item.total}</strong>
-              <span>{item.date.slice(5)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <ExecutionTrendChart analytics={analytics} />
 
       <section className="card reveal">
         <div className="card-header">
