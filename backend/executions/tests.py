@@ -1,4 +1,6 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -6,6 +8,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase, override_settings
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -13,9 +16,21 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from config.asgi import application
 from projects.models import Project
 from testcases.models import TestCase as TC
-from .models import ExecutionLog, ExecutionReport, ExecutionStepResult, TestExecution
+from .models import ExecutionLog, ExecutionReport, ExecutionSchedule, ExecutionStepResult, TestExecution
+from .automation import (
+    UnsupportedAutomationActionError,
+    _build_screenshot_path,
+    _build_video_dir,
+    _capture_failure_screenshot,
+    _collect_video_path,
+    _ensure_browser_session,
+    _get_browser_launcher,
+    _pause_for_recording,
+    _run_step,
+)
 from .reports import store_execution_report
 from .services import initialize_execution, run_test_execution
+from .tasks import dispatch_due_execution_schedules
 
 User = get_user_model()
 
@@ -84,6 +99,89 @@ def sample_steps():
             'note': '',
         },
     ]
+
+
+class AutomationHelperTests(TestCase):
+    def test_browser_aliases_and_session_creation(self):
+        chromium_launcher = MagicMock()
+        webkit_launcher = MagicMock()
+        browser = chromium_launcher.launch.return_value
+        context = browser.new_context.return_value
+        page = context.new_page.return_value
+        playwright = SimpleNamespace(chromium=chromium_launcher, webkit=webkit_launcher)
+
+        launcher, browser_name = _get_browser_launcher(playwright, 'chrome')
+        self.assertIs(launcher, chromium_launcher)
+        self.assertEqual(browser_name, 'chromium')
+        self.assertEqual(_get_browser_launcher(playwright, 'safari')[1], 'webkit')
+        with self.assertRaises(UnsupportedAutomationActionError):
+            _get_browser_launcher(playwright, 'opera')
+
+        created = _ensure_browser_session(
+            playwright=playwright,
+            browser_name='chrome',
+            execution_id=12,
+            browser=None,
+            context=None,
+            page=None,
+        )
+        self.assertEqual(created, (browser, context, page))
+        chromium_launcher.launch.assert_called_once_with(headless=True)
+        self.assertEqual(
+            _ensure_browser_session(
+                playwright=playwright,
+                browser_name='chrome',
+                execution_id=12,
+                browser=browser,
+                context=context,
+                page=page,
+            ),
+            (browser, context, page),
+        )
+
+    def test_run_step_supports_structured_browser_actions_and_input_fallback(self):
+        page = MagicMock()
+        locator = page.locator.return_value
+
+        _run_step(page, SimpleNamespace(action='launch_browser', selector='', value='chromium'))
+        _run_step(page, SimpleNamespace(action='open_page', selector='', value='https://example.com'))
+        page.goto.assert_called_once_with('https://example.com', wait_until='domcontentloaded')
+
+        _run_step(page, SimpleNamespace(action='input_text', selector='#name', value='Jasper'))
+        locator.click.assert_called()
+        locator.fill.assert_called_once_with('')
+        locator.press_sequentially.assert_called_once_with('Jasper', delay=45)
+
+        locator.press_sequentially.side_effect = AttributeError
+        _run_step(page, SimpleNamespace(action='input_text', selector='#name', value='Fallback'))
+        page.keyboard.type.assert_called_once_with('Fallback', delay=45)
+
+        _run_step(page, SimpleNamespace(action='click_button', selector='#submit', value=''))
+        _run_step(page, SimpleNamespace(action='press_key', selector='', value='Enter'))
+        _run_step(page, SimpleNamespace(action='verify_element', selector='#result', value=''))
+        page.keyboard.press.assert_called_once_with('Enter')
+        page.locator.return_value.wait_for.assert_called_once_with(state='visible')
+
+        with self.assertRaises(UnsupportedAutomationActionError):
+            _run_step(page, SimpleNamespace(action='unknown', selector='', value=''))
+
+    def test_media_helpers_capture_and_find_latest_video(self):
+        with TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            screenshot_dir = media_root / 'screenshots'
+            video_dir = media_root / 'videos'
+            page = MagicMock()
+
+            with override_settings(EXECUTION_SCREENSHOT_DIR=screenshot_dir, EXECUTION_VIDEO_DIR=video_dir):
+                screenshot_path = _capture_failure_screenshot(page, execution_id=4, step_no=2)
+                self.assertEqual(Path(screenshot_path), _build_screenshot_path(execution_id=4, step_no=2))
+                self.assertTrue(_build_video_dir(execution_id=4).exists())
+                page.screenshot.assert_called_once_with(path=screenshot_path, full_page=True)
+
+                page.video.path.return_value = '/tmp/video.webm'
+                self.assertEqual(_collect_video_path(page, execution_id=4), '/tmp/video.webm')
+                _pause_for_recording(page, milliseconds=25)
+                page.wait_for_timeout.assert_called_once_with(25)
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
@@ -349,6 +447,183 @@ class TestExecutionApiTests(APITestCase):
                 self.assertFalse(video_path.exists())
                 self.assertFalse(video_dir.exists())
                 self.assertFalse(screenshot_path.exists())
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
+class ExecutionScheduleApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='schedule_user', password='pass123456')
+        self.other_user = User.objects.create_user(username='schedule_other', password='pass123456')
+        self.project = Project.objects.create(name='Schedule Project', description='', owner=self.user)
+        self.other_project = Project.objects.create(name='Other Project', description='', owner=self.other_user)
+        self.tc = TC.objects.create(
+            project=self.project,
+            title='Scheduled case',
+            module='Search',
+            scenario='Scheduled Google',
+            created_by=self.user,
+            steps_json=sample_steps(),
+        )
+        self.other_tc = TC.objects.create(
+            project=self.other_project,
+            title='Other case',
+            module='Search',
+            scenario='Other Google',
+            created_by=self.other_user,
+            steps_json=sample_steps(),
+        )
+
+    def auth(self, user=None):
+        refresh = RefreshToken.for_user(user or self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+    def test_create_and_cancel_future_schedule(self):
+        self.auth()
+        response = self.client.post(
+            '/api/execution-schedules/',
+            {
+                'project': self.project.id,
+                'testcase': self.tc.id,
+                'scheduled_for': (timezone.now() + timedelta(hours=1)).isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], ExecutionSchedule.Status.PENDING)
+
+        cancel_response = self.client.post(f"/api/execution-schedules/{response.data['id']}/cancel/", {}, format='json')
+        self.assertEqual(cancel_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(cancel_response.data['status'], ExecutionSchedule.Status.CANCELLED)
+
+    def test_rejects_past_schedule_and_project_mismatch(self):
+        self.auth()
+        past_response = self.client.post(
+            '/api/execution-schedules/',
+            {
+                'project': self.project.id,
+                'testcase': self.tc.id,
+                'scheduled_for': (timezone.now() - timedelta(minutes=1)).isoformat(),
+            },
+            format='json',
+        )
+        mismatch_response = self.client.post(
+            '/api/execution-schedules/',
+            {
+                'project': self.project.id,
+                'testcase': self.other_tc.id,
+                'scheduled_for': (timezone.now() + timedelta(hours=1)).isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(past_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scheduled_for', past_response.data)
+        self.assertEqual(mismatch_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('testcase', mismatch_response.data)
+
+    def test_user_cannot_schedule_or_view_another_users_project(self):
+        hidden_schedule = ExecutionSchedule.objects.create(
+            project=self.other_project,
+            testcase=self.other_tc,
+            created_by=self.other_user,
+            scheduled_for=timezone.now() + timedelta(hours=1),
+        )
+        self.auth()
+        create_response = self.client.post(
+            '/api/execution-schedules/',
+            {
+                'project': self.other_project.id,
+                'testcase': self.other_tc.id,
+                'scheduled_for': (timezone.now() + timedelta(hours=1)).isoformat(),
+            },
+            format='json',
+        )
+        list_response = self.client.get('/api/execution-schedules/')
+
+        self.assertEqual(create_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn(hidden_schedule.id, [item['id'] for item in list_response.data])
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
+class ExecutionScheduleTaskTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='schedule_task_user', password='pass123456')
+        self.project = Project.objects.create(name='Task Project', description='', owner=self.user)
+        self.tc = TC.objects.create(
+            project=self.project,
+            title='Due case',
+            module='Search',
+            scenario='Due Google',
+            created_by=self.user,
+            steps_json=sample_steps(),
+        )
+
+    @patch('executions.tasks.dispatch_test_execution')
+    def test_dispatches_due_schedule_once_and_skips_cancelled_schedule(self, dispatch_mock):
+        due = ExecutionSchedule.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            created_by=self.user,
+            scheduled_for=timezone.now() - timedelta(minutes=1),
+        )
+        ExecutionSchedule.objects.create(
+            project=self.project,
+            testcase=self.tc,
+            created_by=self.user,
+            scheduled_for=timezone.now() - timedelta(minutes=1),
+            status=ExecutionSchedule.Status.CANCELLED,
+        )
+
+        first_result = dispatch_due_execution_schedules()
+        second_result = dispatch_due_execution_schedules()
+        due.refresh_from_db()
+
+        self.assertEqual(len(first_result), 1)
+        self.assertEqual(second_result, [])
+        self.assertEqual(due.status, ExecutionSchedule.Status.DISPATCHED)
+        self.assertIsNotNone(due.execution)
+        self.assertEqual(due.execution.step_results.count(), len(sample_steps()))
+        dispatch_mock.assert_called_once_with(due.execution_id)
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)
+class ExecutionAnalyticsApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='analytics_user', password='pass123456')
+        self.other_user = User.objects.create_user(username='analytics_other', password='pass123456')
+        self.project = Project.objects.create(name='Analytics Project', description='', owner=self.user)
+        self.other_project = Project.objects.create(name='Other Analytics', description='', owner=self.other_user)
+        self.tc = TC.objects.create(project=self.project, title='Case', created_by=self.user, steps_json=sample_steps())
+        self.other_tc = TC.objects.create(project=self.other_project, title='Other', created_by=self.other_user, steps_json=sample_steps())
+
+        for execution_status in [TestExecution.Status.SUCCESS, TestExecution.Status.SUCCESS, TestExecution.Status.FAILED]:
+            TestExecution.objects.create(
+                project=self.project,
+                testcase=self.tc,
+                triggered_by=self.user,
+                status=execution_status,
+            )
+        TestExecution.objects.create(
+            project=self.other_project,
+            testcase=self.other_tc,
+            triggered_by=self.other_user,
+            status=TestExecution.Status.FAILED,
+        )
+
+    def test_analytics_calculates_trend_and_hides_other_users_executions(self):
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = self.client.get('/api/executions/analytics/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total'], 3)
+        self.assertEqual(response.data['status_counts']['success'], 2)
+        self.assertEqual(response.data['status_counts']['failed'], 1)
+        self.assertEqual(response.data['pass_rate'], 66.7)
+        self.assertEqual(len(response.data['trend']), 7)
+        self.assertEqual(response.data['trend'][-1]['total'], 3)
 
 
 @override_settings(CHANNEL_LAYERS=IN_MEMORY_CHANNEL_LAYERS)

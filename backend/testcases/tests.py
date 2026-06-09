@@ -1,10 +1,14 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
+from django.test import TestCase as DjangoTestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from projects.models import Project
 from .models import TestCase
+from .picker import _normalize_url, get_picker_session, start_picker_session, stop_picker_session
 
 User = get_user_model()
 
@@ -45,6 +49,31 @@ def sample_steps():
             'note': '',
         },
     ]
+
+
+class PickerSessionTests(DjangoTestCase):
+    def test_normalize_url_preserves_schemes_and_adds_https(self):
+        self.assertEqual(_normalize_url(' example.com '), 'https://example.com')
+        self.assertEqual(_normalize_url('http://localhost:5173'), 'http://localhost:5173')
+        self.assertEqual(_normalize_url(''), '')
+
+    @patch('testcases.picker.threading.Thread')
+    def test_picker_session_lifecycle(self, thread_mock):
+        session = start_picker_session(url='example.com', browser_name='webkit')
+
+        thread_mock.return_value.start.assert_called_once()
+        self.assertEqual(session['url'], 'https://example.com')
+        self.assertEqual(session['status'], 'starting')
+        self.assertEqual(session['browser_name'], 'webkit')
+        self.assertTrue(session['screenshot_picker'])
+
+        fetched = get_picker_session(session['session_id'])
+        self.assertEqual(fetched['session_id'], session['session_id'])
+
+        stopped = stop_picker_session(session['session_id'])
+        self.assertTrue(stopped['stop_requested'])
+        self.assertIsNone(get_picker_session('missing'))
+        self.assertIsNone(stop_picker_session('missing'))
 
 
 class TestCaseApiTests(APITestCase):

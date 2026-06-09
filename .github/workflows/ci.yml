@@ -26,10 +26,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Run Django tests
+      - name: Run Django tests with coverage
         env:
           DJANGO_SETTINGS_MODULE: config.settings.test
-        run: python backend/manage.py test --settings=config.settings.test
+        working-directory: backend
+        run: |
+          coverage run manage.py test --settings=config.settings.test
+          coverage report
 
       - name: Run production configuration check
         env:
