@@ -20,6 +20,8 @@ The backend is responsible for:
 - execution tracking, logs, reports, screenshots, and video metadata
 - WebSocket event broadcasting for live execution updates
 - asynchronous execution dispatch through Celery workers
+- scheduled execution dispatch through Celery beat
+- permission-scoped execution analytics
 
 ## Settings Model
 
@@ -52,6 +54,8 @@ All of them support environment-based switching through `DJANGO_SETTINGS_MODULE`
 - `/api/projects/*` for project resources
 - `/api/testcases/*` for test case resources
 - `/api/executions/*` for execution resources
+- `/api/execution-schedules/*` for scheduled execution resources
+- `/api/executions/analytics/` for seven-day execution statistics
 - `/api/health/` for health monitoring
 
 Realtime execution updates are delivered through Channels with Redis as the channel layer backend.
@@ -86,5 +90,5 @@ cd backend
 
 CI currently enforces:
 
-- Django test execution
+- Django test execution with a minimum 80% backend coverage threshold
 - production configuration checks

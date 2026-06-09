@@ -27,6 +27,8 @@ Modern QA workflows often split test management, execution visibility, and deplo
 - Project and member management
 - Structured test case authoring
 - Execution logs, reports, screenshots, and video artifacts
+- Immediate and scheduled browser executions
+- Seven-day execution trend and pass-rate analytics
 - Real-time execution updates over WebSocket
 - Containerized deployment with PostgreSQL and Redis
 - CI/CD workflows for validation, image build, and deployment
@@ -99,6 +101,7 @@ This starts the full local stack:
 - frontend
 - backend
 - Celery worker
+- Celery beat scheduler
 - PostgreSQL
 - Redis
 - Nginx
@@ -129,6 +132,7 @@ cd backend
 ```bash
 cd backend
 ./.venv/bin/celery -A config worker --loglevel=info
+./.venv/bin/celery -A config beat --loglevel=info
 ```
 
 By default:
@@ -158,7 +162,8 @@ Backend:
 
 ```bash
 cd backend
-./.venv/bin/python manage.py test --settings=config.settings.test
+./.venv/bin/coverage run manage.py test --settings=config.settings.test
+./.venv/bin/coverage report
 ./.venv/bin/python manage.py check --deploy --fail-level WARNING --settings=config.settings.prod
 ```
 
