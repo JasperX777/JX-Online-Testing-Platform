@@ -8,6 +8,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState([])
   const [testcases, setTestcases] = useState([])
   const [executions, setExecutions] = useState([])
+  const [analytics, setAnalytics] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -17,15 +18,17 @@ export default function DashboardPage() {
       setLoading(true)
       setError('')
       try {
-        const [projectsData, testcasesData, executionsData] = await Promise.all([
+        const [projectsData, testcasesData, executionsData, analyticsData] = await Promise.all([
           api.get('/api/projects/'),
           api.get('/api/testcases/'),
           api.get('/api/executions/'),
+          api.get('/api/executions/analytics/'),
         ])
         if (!canceled) {
           setProjects(projectsData || [])
           setTestcases(testcasesData || [])
           setExecutions(executionsData || [])
+          setAnalytics(analyticsData)
         }
       } catch (err) {
         if (!canceled) setError(err.message || 'Failed to load dashboard data')
@@ -53,6 +56,7 @@ export default function DashboardPage() {
   }, [projects, testcases, executions])
 
   const recentExecutions = executions.slice(0, 6)
+  const trendMax = Math.max(...(analytics?.trend || []).map((item) => item.total), 1)
 
   return (
     <div className="stack-lg">
@@ -76,6 +80,26 @@ export default function DashboardPage() {
               <p>{stat.label}</p>
               <h3>{stat.value}</h3>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="card reveal">
+        <div className="card-header">
+          <div>
+            <h3>Seven-day Execution Trend</h3>
+            <p className="muted-text">Completed pass rate: {analytics?.pass_rate ?? 0}%</p>
+          </div>
+        </div>
+        <div className="trend-chart" aria-label="Execution totals for the last seven days">
+          {(analytics?.trend || []).map((item) => (
+            <div className="trend-column" key={item.date}>
+              <div className="trend-bar-track" title={`${item.total} total, ${item.success} successful, ${item.failed} failed`}>
+                <div className="trend-bar" style={{ height: `${Math.max((item.total / trendMax) * 100, item.total ? 8 : 0)}%` }} />
+              </div>
+              <strong>{item.total}</strong>
+              <span>{item.date.slice(5)}</span>
+            </div>
           ))}
         </div>
       </section>

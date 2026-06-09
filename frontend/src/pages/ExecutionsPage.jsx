@@ -17,9 +17,11 @@ export default function ExecutionsPage() {
   const [projects, setProjects] = useState([])
   const [testcases, setTestcases] = useState([])
   const [executions, setExecutions] = useState([])
+  const [schedules, setSchedules] = useState([])
   const [projectCaseCounts, setProjectCaseCounts] = useState({})
   const [projectId, setProjectId] = useState('')
   const [testcaseId, setTestcaseId] = useState('')
+  const [scheduledFor, setScheduledFor] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -29,13 +31,15 @@ export default function ExecutionsPage() {
   const filteredTestcases = useMemo(() => testcases, [testcases])
 
   const loadData = async () => {
-    const [projectData, executionData, allTestcasesData] = await Promise.all([
+    const [projectData, executionData, allTestcasesData, scheduleData] = await Promise.all([
       api.get('/api/projects/'),
       api.get('/api/executions/'),
       api.get('/api/testcases/'),
+      api.get('/api/execution-schedules/'),
     ])
     setProjects(projectData || [])
     setExecutions(executionData || [])
+    setSchedules(scheduleData || [])
     const counts = {}
     ;(allTestcasesData || []).forEach((item) => {
       counts[item.project] = (counts[item.project] || 0) + 1
@@ -168,6 +172,35 @@ export default function ExecutionsPage() {
     }
   }
 
+  const scheduleExecution = async () => {
+    setError('')
+    setMessage('')
+    try {
+      await api.post('/api/execution-schedules/', {
+        project: Number(projectId),
+        testcase: Number(testcaseId),
+        scheduled_for: new Date(scheduledFor).toISOString(),
+      })
+      setMessage('Execution scheduled.')
+      setScheduledFor('')
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Scheduling request failed')
+    }
+  }
+
+  const cancelSchedule = async (scheduleId) => {
+    setError('')
+    setMessage('')
+    try {
+      await api.post(`/api/execution-schedules/${scheduleId}/cancel/`, {})
+      setMessage('Schedule cancelled.')
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Cancel schedule failed')
+    }
+  }
+
   const closeDeleteModal = () => setDeleteTarget(null)
 
   const deleteExecution = async () => {
@@ -218,10 +251,62 @@ export default function ExecutionsPage() {
           <button className="button primary" type="submit">
             Run Execution
           </button>
+          <input
+            aria-label="Scheduled execution time"
+            type="datetime-local"
+            value={scheduledFor}
+            onChange={(event) => setScheduledFor(event.target.value)}
+          />
+          <button
+            className="button ghost"
+            type="button"
+            disabled={!projectId || !testcaseId || !scheduledFor}
+            onClick={scheduleExecution}
+          >
+            Schedule
+          </button>
         </form>
 
         {message ? <p className="success-text">{message}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
+      </section>
+
+      <section className="card reveal">
+        <h3>Scheduled Executions</h3>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Test Case</th>
+                <th>Scheduled For</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="muted-cell">No scheduled executions.</td>
+                </tr>
+              ) : schedules.map((schedule) => (
+                <tr key={schedule.id}>
+                  <td>{schedule.project_name}</td>
+                  <td>{schedule.testcase_title}</td>
+                  <td>{new Date(schedule.scheduled_for).toLocaleString()}</td>
+                  <td><StatusPill status={schedule.status} /></td>
+                  <td>
+                    {schedule.status === 'pending' ? (
+                      <button className="button danger" type="button" onClick={() => cancelSchedule(schedule.id)}>
+                        Cancel
+                      </button>
+                    ) : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="card reveal">

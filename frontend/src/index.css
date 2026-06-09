@@ -312,6 +312,44 @@ textarea {
   margin: 6px 0 0;
 }
 
+.trend-chart {
+  min-height: 180px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(44px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.trend-column {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.trend-column strong {
+  color: var(--text-main);
+}
+
+.trend-bar-track {
+  width: min(44px, 100%);
+  height: 120px;
+  display: flex;
+  align-items: end;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(24, 36, 52, 0.62);
+}
+
+.trend-bar {
+  width: 100%;
+  min-height: 0;
+  background: var(--signal);
+  transition: height 240ms ease;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -396,6 +434,16 @@ th {
 .status-pending {
   color: #07122d;
   background: var(--pending);
+}
+
+.status-dispatched {
+  color: #07212d;
+  background: var(--signal);
+}
+
+.status-cancelled {
+  color: #2a0308;
+  background: var(--danger);
 }
 
 .status-unknown {
@@ -622,6 +670,11 @@ th {
 .button.danger:hover {
   color: #26060a;
   background: var(--danger);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .ai-agent-page {
