@@ -16,7 +16,7 @@ click-repl==0.3.0
 constantly==23.10.4
 coverage==7.12.0
 cryptography==46.0.7
-daphne==4.2.1
+daphne==4.2.2
 Django==6.0.6
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
