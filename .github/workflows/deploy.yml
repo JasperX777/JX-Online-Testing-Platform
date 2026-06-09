@@ -69,7 +69,7 @@ jobs:
           retry docker push "${FRONTEND_IMAGE}:sha-${GITHUB_SHA}"
 
       - name: Upload deployment bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-bundle
           path: |
